@@ -4,8 +4,9 @@ from os import sep as os__sep
 from pandas import DataFrame as pd__DataFrame
 from pandas import concat as pd__concat
 from datetime import datetime as dt
-from datetime import timedelta as dt__timedelta
 from dateutil import relativedelta as du__relativedelta
+from smcfpl.aux_funcs import *
+
 import logging
 logging.basicConfig(level=logging.DEBUG,
                     format="[%(levelname)s][%(asctime)s] - %(message)s")
@@ -83,7 +84,7 @@ def Crea_1ra_div_Etapas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, Fecha
     # Resetea los indices
     DF_CambioFechas.reset_index(drop=True, inplace=True)
 
-    MetodoUsar = 1
+    MetodoUsar = 2
     print('MetodoUsar:', MetodoUsar)
     if MetodoUsar == 1:
         """ Método 1 (Diferencia entre filas)
@@ -92,77 +93,16 @@ def Crea_1ra_div_Etapas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, Fecha
         se selecciona el primer valor como aquel de referencia. Notar que el último valor no es
         considerado (por reducción de indice en comparación y ser éste la fecha de termino de simulación).
         While es necesario para facilitar el salto de filas en iteración."""
-        fila = 0
-        NumFilas = len(DF_CambioFechas.index) - 1
-        # Inicializa la primera fecha (inicio simulación, ya que está ordenada)
-        ListaFechasFinales = [ DF_CambioFechas.loc[fila, 0] ]
-        while fila < NumFilas:
-            # recorre las filas, tal que la fila actual depende de fila + i
-            i = 0   # indicador de cuantas filas hay que desplazarse desde 'fila' para siguiente valor no cercano.
-            Continuar = True
-            while Continuar:    # parecido a un 'do-while'
-                # calcula la diferencia temporal entre el instante de tiempo actual y el siguiente
-                NextHorasDiff = DF_CambioFechas.loc[fila + i + 1, 0] - DF_CambioFechas.loc[fila + i, 0]
-                Condicion1 = NextHorasDiff >= dt__timedelta(days=1)  # condición: diferencia de tiempo sea mayor o igual a 1 día (type: timedelta)
-                Condicion2 = fila + i > NumFilas    # condición: supere el número de filas DataFrame
-                i += 1
-                if Condicion1 | Condicion2:
-                    Continuar = False
-            """
-            Agrega a una lista la primera coincidencia de las fechas cercanas. Notar que el largo de 'ListaFechasFinales'
-            es el Número de etapas resultantes + 1
-            """
-            ListaFechasFinales.append( DF_CambioFechas.loc[fila + i, 0] )
-            fila += i
-
-        # Convierte la lista de fechas finales en una lista para ser ingresada al data del DataFrame de salida.
-        LAux = []
-        for IndFecha in range(len(ListaFechasFinales) - 1):
-            LAux.append( [IndFecha + 1, ListaFechasFinales[IndFecha], ListaFechasFinales[IndFecha + 1]] )
-        print('DF_Etapas:\n', pd__DataFrame(data=LAux, columns=['EtaNum', 'FechaIni', 'FechaFin']).set_index('EtaNum'))
-
-        # print('DF_Etapas:\n', DF_Etapas)
         logger.debug("! saliendo de función: 'Crea_1ra_div_Etapas' ...")
-        return pd__DataFrame(data=LAux, columns=['EtaNum', 'FechaIni', 'FechaFin']).set_index('EtaNum')
-
+        return Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref=False)
     elif MetodoUsar == 2:
         """ Método 2 (Diferencia respecto fila referencia)
         Para cada fila 'fila' del DataFrame observa la diferencia con siguiente fecha. En
         caso de poseer menor diferencia a 1 día se sigue observando el siguiente respecto desde la misma fila. Notar que
         el valor de la fila saltado no es considerado a futuro, por lo que se considera como si no existiese.
         While es necesario para facilitar el salto de filas en iteración."""
-
-        fila = 0
-        NumFilas = len(DF_CambioFechas.index) - 1
-        # Inicializa la primera fecha (inicio simulación, ya que está ordenada)
-        ListaFechasFinales = [ DF_CambioFechas.loc[fila, 0] ]
-        while fila < NumFilas:
-            # recorre las filas, tal que la fila actual depende de fila + i
-            i = 0   # indicador de cuantas filas hay que desplazarse desde 'fila' para siguiente valor no cercano.
-            Continuar = True
-            while Continuar:    # parecido a un 'do-while'
-                # calcula la diferencia temporal entre el de referencia y el siguiente
-                NextHorasDiff = DF_CambioFechas.loc[fila + i + 1, 0] - DF_CambioFechas.loc[fila, 0]
-                Condicion1 = NextHorasDiff >= dt__timedelta(days=1)  # condición: diferencia de tiempo sea mayor o igual a 1 día (type: timedelta)
-                Condicion2 = fila + i > NumFilas    # condición: supere el número de filas DataFrame
-                i += 1
-                if Condicion1 | Condicion2:
-                    Continuar = False
-            """
-            Agrega a una lista la primera coincidencia de las fechas cercanas. Notar que el largo de 'ListaFechasFinales'
-            es el Número de etapas resultantes + 1
-            """
-            ListaFechasFinales.append( DF_CambioFechas.loc[fila + i, 0] )
-            fila += i
-        print(ListaFechasFinales)
-        # Convierte la lista de fechas finales en una lista para ser ingresada al data del DataFrame de salida.
-        LAux = []
-        for IndFecha in range(len(ListaFechasFinales) - 1):
-            LAux.append( [IndFecha + 1, ListaFechasFinales[IndFecha], ListaFechasFinales[IndFecha + 1]] )
-
-        print('DF_Etapas:\n', pd__DataFrame(data=LAux, columns=['EtaNum', 'FechaIni', 'FechaFin']).set_index('EtaNum'))
         logger.debug("! saliendo de función: 'Crea_1ra_div_Etapas' ...")
-        return pd__DataFrame(data=LAux, columns=['EtaNum', 'FechaIni', 'FechaFin']).set_index('EtaNum')
+        return Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref=True)
     else:
         msg = "MetodoUsar No fue ingresado válidamente en función 'Crea_1ra_div_Etapas'."
         logger.error(msg)
