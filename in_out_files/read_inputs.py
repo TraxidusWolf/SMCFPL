@@ -33,10 +33,10 @@ def read_sheets_to_dataframes(ruta, NombreLibro):
         'in_smcfpl_tecgen'       : ( 'GenNom'      , 'PmaxMW'       , 'PminMW'       , 'Sn_kva'      , 'Vm_pu_ideal' , 'NomBarConn'    , 'GenTec'       , 'CVar'         , 'EsSlack')      ,
         'in_smcfpl_teccargas'    : ( 'LoadNom'     , 'NomBarConn'   , 'LoadTyp'      , 'DemMax_MW'   , 'DemMax_MVAr' , 'DemIni')    ,
         'in_smcfpl_proydem'      : ( 'FechaIni'    , 'FechaFin'     , 'TasaCliLib'   , 'TasaCliReg') ,
-        'in_scmfpl_histdemsist'  : ( 'fecha'       , 'hora'         , 'real'         , 'programado') ,
+        'in_scmfpl_histdemsist'  : ( 'fecha'       , 'real'         , 'programado') ,
         'in_smcfpl_mantbarras'   : ( 'BarNom'      , 'FechaIni'     , 'FechaFin')    ,
         'in_smcfpl_mantgen'      : ( 'GenNom'      , 'FechaIni'     , 'FechaFin'     , 'PmaxMW'      , 'PminMW'      , 'CVar'          , 'NomBarConn'   , 'Operativa')   ,
-        'in_smcfpl_manttx'       : ( 'LinNom'      , 'TipoElmn'     , 'FechaIni'     , 'FechaFin'     , 'Parallel'    , 'Largo_km'    , 'Pmax_AB_MW'    , 'Pmax_BA_MW'   , 'Operativa'    , 'BarraA'        , 'BarraB'      , 'r_ohm_per_km'   , 'x_ohm_per_km'   , 'c_nf_per_km'    , 'max_i_ka')       ,
+        'in_smcfpl_manttx'       : ( 'LinNom'      , 'TipoElmn'     , 'FechaIni'     , 'FechaFin'    , 'Parallel'    , 'Largo_km'      , 'Pmax_AB_MW'    , 'Pmax_BA_MW'   , 'Operativa'    , 'BarraA'        , 'BarraB'      , 'r_ohm_per_km'   , 'x_ohm_per_km'   , 'c_nf_per_km'    , 'max_i_ka')       ,
         'in_smcfpl_mantcargas'   : ( 'LoadNom'     , 'FechaIni'     , 'FechaFin'     , 'DemMax_MW'   , 'DemMax_MVAr' , 'NomBarConn'    , 'Operativa')   ,
         'in_smcfpl_histsolar'    : ( 'fecha'       , 'EgenMWh')     ,
         'in_smcfpl_histeolicas'  : ( 'fecha'       , 'EgenMWhZ1'    , 'EgenMWhZ2'    , 'EgenMWhZ3'   , 'EgenMWhZ4')  ,
@@ -61,6 +61,8 @@ def read_sheets_to_dataframes(ruta, NombreLibro):
 
     # Crea diccionario con dataframe de todos los datos de entrada
     DFs_entrada = {}
+
+    #
     #
     # PARA PROPOSITO DE DEPURACION
     HojasNecesarias = {k: HojasNecesarias[k] for k in ['in_smcfpl_mantbarras',
@@ -68,8 +70,13 @@ def read_sheets_to_dataframes(ruta, NombreLibro):
                                                        'in_smcfpl_manttx',
                                                        'in_smcfpl_mantcargas',
                                                        'in_smcfpl_histsolar',
-                                                       'in_smcfpl_histeolicas']}
+                                                       'in_smcfpl_histeolicas',
+                                                       'in_scmfpl_histdemsist'
+                                                       ]}
     #
+    #
+    #
+
     for Hoja, variables in HojasNecesarias.items():
         #
         # PARA PROPOSITO DE DEPURACION
@@ -135,21 +142,23 @@ def Lee_Hoja_planilla(RutaCompleta, NombreHoja, *args):
                                                                                                                                  ))
             raise ValueError("'FechaFin' y 'FechaIni' no cumplen requisitos en hoja '{}'.".format(NombreHoja))
 
-    # En caso de ser las entradas de datos historicos solares o eólicos, agrupa la info por meses (promedio de los años). Error en caso de ser menor
-    if (NombreHoja == 'in_smcfpl_histsolar') | (NombreHoja == 'in_smcfpl_histeolicas'):
-        df = Agrupa_data_ERNC(df)
+    if (NombreHoja == 'in_smcfpl_histsolar') | (NombreHoja == 'in_smcfpl_histeolicas') | (NombreHoja == 'in_scmfpl_histdemsist'):
+        # Agrupa los dataframe de generación histórica solar, eólicas, y demanda sistémica en un objeto groupby con Mes/Dia/Hora. Genera error en caso de ser menor
+        df = Agrupa_data_ERNC_Y_HistDem(df)
 
     logger.debug("! saliendo de función: 'Lee_Hoja_planilla' ...")
     return df
 
 
-def Agrupa_data_ERNC(DF):
+def Agrupa_data_ERNC_Y_HistDem(DF):
     """ Toma el promedio de los meses a lo largo de los años ingresados.
         Arroja error en caso de poseer data menor a un año.
     """
     print(DF.name)
     # verifica la duración máxima de los datos del DataFrame
     RTiempoData = DF['fecha'].iloc[-1] - DF['fecha'].iloc[0]
+    print(DF['fecha'].iloc[0])
+    print(DF['fecha'].iloc[-1])
     print( RTiempoData )
 
     # Manejo de errores en datos mínimos
