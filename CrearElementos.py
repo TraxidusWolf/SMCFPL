@@ -111,7 +111,7 @@ def Crea_1ra_div_Etapas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, Fecha
 
 def Crea_2da_div_Etapas(Etapas, DF_Solar, DF_Eolicas):
     logger.debug("! entrando en función: 'Crea_2da_div_Etapas' ...")
-    print(DF_Solar)
-    print(DF_Eolicas)
+    # print(DF_Solar)
+    # print(DF_Eolicas)
     logger.debug("! saliendo de función: 'Crea_2da_div_Etapas' ...")
     return Etapas
