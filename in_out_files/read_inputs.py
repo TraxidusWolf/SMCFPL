@@ -65,13 +65,14 @@ def read_sheets_to_dataframes(ruta, NombreLibro):
     #
     #
     # PARA PROPOSITO DE DEPURACION
-    HojasNecesarias = {k: HojasNecesarias[k] for k in ['in_smcfpl_mantbarras',
+    HojasNecesarias = {k: HojasNecesarias[k] for k in [
+                                                        'in_smcfpl_mantbarras',
                                                        'in_smcfpl_mantgen',
                                                        'in_smcfpl_manttx',
                                                        'in_smcfpl_mantcargas',
                                                        'in_smcfpl_histsolar',
                                                        'in_smcfpl_histeolicas',
-                                                       'in_scmfpl_histdemsist'
+                                                       # 'in_scmfpl_histdemsist'
                                                        ]}
     #
     #
@@ -154,12 +155,12 @@ def Agrupa_data_ERNC_Y_HistDem(DF):
     """ Toma el promedio de los meses a lo largo de los años ingresados.
         Arroja error en caso de poseer data menor a un año.
     """
-    print(DF.name)
+    # print(DF.name)
     # verifica la duración máxima de los datos del DataFrame
     RTiempoData = DF['fecha'].iloc[-1] - DF['fecha'].iloc[0]
-    print(DF['fecha'].iloc[0])
-    print(DF['fecha'].iloc[-1])
-    print( RTiempoData )
+    # print(DF['fecha'].iloc[0])
+    # print(DF['fecha'].iloc[-1])
+    # print( RTiempoData )
 
     # Manejo de errores en datos mínimos
     if RTiempoData < dt__timedelta(days=364, hours=23):

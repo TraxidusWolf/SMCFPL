@@ -45,10 +45,17 @@ def Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref=True):
         ListaFechasFinales.append( DF_CambioFechas.loc[fila + i, 0] )
         fila += i
 
+    # print('ListaFechasFinales:', ListaFechasFinales)
     # Convierte la lista de fechas finales en una lista para ser ingresada al data del DataFrame de salida.
     LAux = []
     for IndFecha in range(len(ListaFechasFinales) - 1):
-        LAux.append( [IndFecha + 1, ListaFechasFinales[IndFecha], ListaFechasFinales[IndFecha + 1]] )
-    # print('DF_Etapas:\n', pd__DataFrame(data=LAux, columns=['EtaNum', 'FechaIni', 'FechaFin']).set_index('EtaNum'))
+        """ Recordar que las fechas datetime son indicativas de la hora completa que le siguen, i.e., si se menciona que un evento ocurrió 
+        a determinada hora significa que ocurrió durante o al menos dentro de dicha hora. """
+        if IndFecha == 0:
+            # En caso de ser el primer elemento agrega tal cual la fecha divisoria.
+            LAux.append( [IndFecha + 1, ListaFechasFinales[IndFecha], ListaFechasFinales[IndFecha + 1]] )
+        else:
+            # En caso de presentarse las siguientes 'FechaIni', estas se les agrega una hora c/r al de la fila superior 'FechaFin'.
+            LAux.append( [IndFecha + 1, ListaFechasFinales[IndFecha] + dt__timedelta(hours=1), ListaFechasFinales[IndFecha + 1]] )
 
     return pd__DataFrame(data=LAux, columns=['EtaNum', 'FechaIni', 'FechaFin']).set_index('EtaNum')
