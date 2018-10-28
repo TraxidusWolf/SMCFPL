@@ -3,7 +3,6 @@ from smcfpl.in_out_files import read_sheets_to_dataframes
 from os import sep as os__sep
 from pandas import DataFrame as pd__DataFrame
 from pandas import concat as pd__concat
-from pandas import to_datetime as pd__to_datetime
 from datetime import datetime as dt
 from dateutil import relativedelta as du__relativedelta
 from smcfpl.aux_funcs import *
@@ -114,10 +113,8 @@ def Crea_1ra_div_Etapas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, Fecha
 def Crea_2da_div_Etapas(Etapas, DF_Solar, DF_Eolicas):
     logger.debug("! entrando en función: 'Crea_2da_div_Etapas' ...")
     # inicializa DataFrame de salida
-    DF_Etapas2 = pd__DataFrame()
+    DF_Eta = pd__DataFrame(columns=['FechaIni', 'FechaFin', 'HoraDiaIni', 'HoraDiaFin', 'TotalHoras'])
     print('Etapas:\n', Etapas)
-    # inicializa un contador de etapas
-    ContadorEtapas = 1
     for row in Etapas.iterrows():
         FInicioEta = row[1]['FechaIni']
         FTerminoEta = row[1]['FechaFin']
@@ -132,97 +129,72 @@ def Crea_2da_div_Etapas(Etapas, DF_Solar, DF_Eolicas):
 
         Notar que al existir una etapa existente entre más de año, la BD ERNC se considera cíclica.
         """
-        DF_ERNC = DF_Solar.join(DF_Eolicas).reset_index()
         # inicializa dataframe para incorporar generación previa de las 4 unidades tipo.
-        DF_aux = pd__DataFrame()
-        # Agrega el dataframe de generación ERNC previa al DF_aux considerando cada año de las etapas
-        for DeltaAnio in range(NumAniosNecesarios):
-            # Duplica DF_ERNC agregando indices con datetime. Cada año tiene un DF_aux
-            DF_aux = DF_aux.append(
-                DF_ERNC.set_index(
-                    pd__to_datetime(
-                        pd__DataFrame(
-                            {
-                                'year': FInicioEta.year + DeltaAnio,
-                                'month': DF_ERNC['Mes'],
-                                'day': DF_ERNC['Dia'],
-                                'hour': DF_ERNC['Hora']
-                            }
-                        )
-                    )
-                )
-            )
-        # Limpia el DataFrame. Elimina columnas 'Mes', 'Dia', y 'Hora'
-        DF_aux.drop(labels=['Mes', 'Dia', 'Hora'], inplace=True, axis='columns')
-        # Utiliza el DF_aux para filtrarlo según las fechas de las etapas. Elimina fechas anteriores
-        DF_aux = DF_aux[ FInicioEta <= DF_aux.index ]
-        # Ahora elimina fechas posteriores
-        DF_aux = DF_aux[ DF_aux.index <= FTerminoEta ]
-        print( 'DF_aux.max(axis=0):\n', DF_aux.max(axis=0) )
+        DF_ERNC = DF_Solar.join(DF_Eolicas)
+        # Filtra por meses y posteriormente elimina dicha columna
+        Cond1 = FInicioEta.month <= DF_ERNC.index.get_level_values('Mes')
+        Cond2 = DF_ERNC.index.get_level_values('Mes') <= FTerminoEta.month
+        # Asegura de filtrar adecuadamente los DataFrame (debe ser cíclico si existe cambio de año)
+        if FInicioEta.month <= FTerminoEta.month:
+            DF_ERNC = DF_ERNC[ Cond1 & Cond2 ]
+        elif FTerminoEta.month < FInicioEta.month:
+            DF_ERNC = DF_ERNC[ Cond1 | Cond2 ]
+        DF_ERNC = DF_ERNC.groupby(level=['Dia', 'Hora']).mean()  # Obtiene el PROMEDIO de los valores inter-mensuales (de existir)
+
+        # Filtra por Días y posteriormente elimina dicha columna
+        Cond1 = FInicioEta.day <= DF_ERNC.index.get_level_values('Dia')
+        Cond2 = DF_ERNC.index.get_level_values('Dia') <= FTerminoEta.day
+        # Asegura de filtrar adecuadamente los DataFrame (debe ser cíclico si existe cambio de año)
+        if FInicioEta.day <= FTerminoEta.day:
+            DF_ERNC = DF_ERNC[ Cond1 & Cond2 ]
+        elif FTerminoEta.day < FInicioEta.day:
+            DF_ERNC = DF_ERNC[ Cond1 | Cond2 ]
+        DF_ERNC = DF_ERNC.groupby(level=['Hora']).mean()  # Obtiene el PROMEDIO de los valores inter-diario (de existir)
+        # DF_ERNC ya es un DataFrame con las 24 horas de un día
 
         # Warning en caso de ser todo el dataframe vacío
-        if 0 in DF_aux.max(axis=0):
+        if 0 in DF_ERNC.max(axis=0):
             msg = "El máximo de uno de los datos de las columnas es 0!\n Valor encontrado entre fechas {} y {}.".format(FInicioEta, FTerminoEta)
             logger.warn(msg)
 
         # Normaliza los valores respecto al máximo de aquellos existentes en la etapa.
-        DF_aux = DF_aux.divide(DF_aux.max(axis=0), axis='columns')
-        # DF_aux = DF_aux/DF_aux.max(axis=0)
-        # print('DF_aux:\n', DF_aux)
+        DF_ERNC = DF_ERNC.divide(DF_ERNC.max(axis=0), axis='columns')
 
-        # Inicializa una lista para transformar a un DataFrame de salida
-        Lista_Cambios = []
+        # print('DF_ERNC:\n', DF_ERNC)
 
-        # RE-corrobora que cada 1ra separación de etapa no sea menor que un día.
-        if DF_ERNC.shape[0] < 24:
-            msg = "Etapa {} posee menos de 24 hrs.".format(row[0])
-            logger.error(msg)
-            raise ValueError(msg)
+        # En DF_Cambios obtiene el nombre de columna de aquel con mayor valor para las horas de la etapa
+        DF_Cambios = DF_ERNC.idxmax(axis=1)  # axis=1 | axis='columns' : columns-wise
+        # print('DF_Cambios:\n', DF_Cambios)
 
-        # recorre todas las horas del DF_ERNC en la etapa para identificar el indice de aquel con mayor valor
-        # for h in range(DF_ERNC.shape[0]):
-        for FilaDF_Aux in DF_aux.iterrows():
-            # Nombre del indice que posee mayor valor: row[1].idxmax()
-            # print( 'row[1].idxmax():', row[1].idxmax() )
-            Lista_Cambios.append( FilaDF_Aux[1].idxmax() )
-            # print()
-
-        # print('Lista_Cambios:\n', Lista_Cambios)
-        # Crea dataframe a partir de la lista de cambios.
-        DF_Cambios = pd__DataFrame( Lista_Cambios )
         # Encuentra los índices que son distintos. Los desfaza hacia abajo (1 periodo), y rellena el vació con el valor siguiente encontrado
         DF_Cambios = DF_Cambios.ne(DF_Cambios.shift(periods=1).fillna(method='bfill'))  # boolean single-column
         # print('DF_Cambios:\n', DF_Cambios)
-        # obtiene los elementos que son de cambio, según lo encontrado previamente.
-        DF_aux = DF_aux[ DF_Cambios.values ]
-        print('DF_aux:\n', DF_aux)
-        print('DF_aux.shape:\n', DF_aux.shape)
-        print()
+        # obtiene los elementos que son de cambio, según lo encontrado previamente. Misma variable ya que son lo que finalmente importa
+        DF_ERNC = DF_ERNC[ DF_Cambios.values ]
+        # print('DF_ERNC:\n', DF_ERNC)
+        # print('DF_ERNC.shape:\n', DF_ERNC.shape)
+        # print()
 
-        # Por cada fila agrega al DataFrame de salida las etapas intermedias con 'FechaIni' y 'FechaFin'
-        LAux = []
-        RangoCambios = range(DF_aux.shape[0] - 1)
-        for FilaNum in RangoCambios:
-            if FilaNum == 0:
-                # excepción para primer valor
-                LAux.append( [ DF_aux.index[FilaNum], DF_aux.index[FilaNum + 1] ] )
-            elif FilaNum == RangoCambios[-1]:
-                # Finalmente agrega última fecha (última iteración)
-                LAux.append( [DF_aux.index[FilaNum] + dt__timedelta(hours=1), row[1]['FechaFin']] )
-            else:
-                LAux.append( [ DF_aux.index[FilaNum] + dt__timedelta(hours=1), DF_aux.index[FilaNum + 1] ] )
-            # print('LAux:\n', LAux)
-        # crea otro dataframe auxiliar para transformar la lista de fechas de etapas al formato tradicional de dataframe_etapas
-        DF_AuxEta = pd__DataFrame(data=LAux, columns=['FechaIni', 'FechaFin']).reset_index()
-        DF_AuxEta.columns = ['EtaNum', 'FechaIni', 'FechaFin']
-        DF_AuxEta.set_index('EtaNum', inplace=True)
-        DF_AuxEta.index += 1    # comienza con etapa 1
-        # print('DF_AuxEta:\n', DF_AuxEta)
-        DF_Etapas2 = DF_Etapas2.append( DF_AuxEta )
+        # Convierte horas dentro de cada etapa en dataframe
+        Horas_Cambio = [0] + (DF_ERNC.index.tolist()) + [23]
+        Horas_Cambio = sorted(set(Horas_Cambio))    # transforma a set para evitar duplicidades, posteriormente transforma a lista ordenada ascendente
+        print('Horas_Cambio:', Horas_Cambio)
+        DF_etapas2 = Lista2DF_consecutivo(Lista=Horas_Cambio, incremento=1, NombreColumnas=['HoraDiaIni', 'HoraDiaFin'])
+        # crea una nueva columna al inicio con el mismo valor para 'FechaFin'
+        DF_etapas2.insert(loc=0, column='FechaFin', value=FTerminoEta)
+        # crea una nueva columna al nuevo inicio con el mismo valor para 'FechaIni'
+        DF_etapas2.insert(loc=0, column='FechaIni', value=FInicioEta)
+        # agrega columna (al final) con la cantidad de horas diarias equivalentes de cada etapa
+        DF_etapas2 = DF_etapas2.assign( **{'TotalHoras': DF_etapas2['HoraDiaFin'] - DF_etapas2['HoraDiaIni'] + 1} )
+        # print('DF_etapas2:\n', DF_etapas2)
+        # print()
 
-        ContadorEtapas += 1
-        break
-    print('DF_Etapas2:\n', DF_Etapas2)
+        DF_Eta = DF_Eta.append( DF_etapas2 )
+    # reinicia los indices, les suma uno y asigna nombre de 'EtaNum'. Todo para facilidad de comprensión
+    DF_Eta.reset_index(drop=True, inplace=True)
+    DF_Eta.index += 1
+    DF_Eta.index.name = 'EtaNum'
+    # print('DF_Eta:\n', DF_Eta)
 
     logger.debug("! saliendo de función: 'Crea_2da_div_Etapas' ...")
-    return Etapas
+    return DF_Eta

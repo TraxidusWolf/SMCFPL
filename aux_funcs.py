@@ -59,3 +59,24 @@ def Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref=True):
             LAux.append( [IndFecha + 1, ListaFechasFinales[IndFecha] + dt__timedelta(hours=1), ListaFechasFinales[IndFecha + 1]] )
 
     return pd__DataFrame(data=LAux, columns=['EtaNum', 'FechaIni', 'FechaFin']).set_index('EtaNum')
+
+
+def Lista2DF_consecutivo(Lista, incremento, NombreColumnas):
+    """
+        Crea una un dataframe de 2 columnas con los itemes separados, a partir de una lista unidimensional.
+        Notar que el tipo de la variable incremento debe ser del mismo tipo que los item de la lista (todos mismo tipo).
+        Ejemplo:
+        >>> Lista2DF_consecutivo(Lista = [10,20,33,45], Incremento = 1, NombreColumnas=['a','b'])
+             a    b
+        0   10   20
+        1   21   33
+        2   34   45
+    """
+    LAux = []
+    for IndElmn in range(len(Lista) - 1):
+        if IndElmn == 0:
+            LAux.append( [ Lista[IndElmn], Lista[IndElmn + 1] ] )
+        else:
+            LAux.append( [ Lista[IndElmn] + incremento, Lista[IndElmn + 1] ] )
+
+    return pd__DataFrame(data=LAux, columns=NombreColumnas)
