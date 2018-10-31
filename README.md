@@ -8,6 +8,7 @@ lala
 
 ## TODO
 
+[comment]: # (asdasd)
 - :white_large_square:  Crear archivo 'Calculations.py'.
 - :white_check_mark: Crear División 1 de etapas
 - :white_check_mark: Crear División 2 de etapas
