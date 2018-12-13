@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.DEBUG,
 logger = logging.getLogger()
 
 
-def read_sheets_to_dataframes(ruta, NombreLibro):
+def read_sheets_to_dataframes(ruta, NombreLibro, NumParallelCPU):
     """
         Lee las hojas necesarias para completar la información requerida para los archivos de entrada.
         Realiza una verificación de las hojas que son como mínimo requeridas, éstas en el diccionario 'HojasNecesarias'
@@ -75,7 +75,10 @@ def read_sheets_to_dataframes(ruta, NombreLibro):
                 DFs_entrada['df_' + Hoja] = Lee_Hoja_planilla(RutaCompleta, Hoja, False, *variables)
     else:  # Lee archivos en Paralelo
         # Parámetros de paralelismo
-        Ncpu = mu__cpu_count()
+        if NumParallelCPU:
+            Ncpu = NumParallelCPU
+        else:
+            Ncpu = mu__cpu_count()
         logger.info("Leyendo entradas en paralelo. Utilizando máximo {} procesos simultáneos.".format(Ncpu))
         Pool = mu__Pool(Ncpu)
         Results = []
