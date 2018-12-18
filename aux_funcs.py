@@ -3,12 +3,10 @@ from pandas import DataFrame as pd__DataFrame, date_range as pd__date_range, Ser
 from pandas import datetime as pd__datetime, set_option as pd__set_option
 from pandas import concat as pd__concat, Timedelta as pd__Timedelta
 from numpy import mean as np__mean, nan as np__NaN, arange as np__arange, bool_ as np__bool_
-from numpy.random import uniform as np_random__uniform
+from numpy.random import uniform as np_random__uniform, normal as np__random__normal
+from numpy.random import choice as np__random__choice
 from dateutil.relativedelta import relativedelta as du__relativedelta
 from collections import OrderedDict as collections__OrderedDict
-from os.path import sep as os__path__sep
-from pandapower import to_json as pp__to_json, to_pickle as pp__to_pickle
-from json import dump as json__dump
 
 import locale
 import logging
@@ -30,6 +28,9 @@ def print_full_df():
 
 
 def Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref_fija=True):
+    """
+        Crea las
+    """
     logger.debug("! entrando en función: 'Crea_Etapas_desde_Cambio_Mant' (aux_funcs.py) ...")
     fila = 0
     NumFilas = len(DF_CambioFechas.index) - 1
@@ -374,6 +375,7 @@ def TSF_Proyectada_a_Etapa(DF_TSFProy, DF_Etapas, FechaIniSim):
         a la misma etapa topológica. Antes de ingresar los datos es recomendable verificar las posibles etapas topológicas a generarse para definir las fechas de
         cambio de TSF.
 
+        Retorna un pandas DataFrame de columnas provenientes de 'DF_TSFProy'
     """
     logger.debug("! entrando en función: 'TSF_Proyectada_a_Etapa' (aux_funcs.py) ...")
     # 1.- Inicializa Dataframe de salida con TSF NaN values e indice de etapas (después rellena Nan values)
@@ -480,27 +482,293 @@ def Mantenimientos_a_etapas(DF_MantBar, DF_MantTx, DF_MantGen, DF_MantLoad, DF_E
     return Dict_DF_Salida
 
 
-def Imprime_Data_Etapa(TempFolderName, EtaNum, BD_DemProy, BD_Hidrologias_futuras, BD_TSFProy, BD_RedesXEtapa):
+def GenHistorica_a_Etapa(DF_Etapas, DF_histsolar, DF_histeolicas):
     """
-        Imprimir por cada etapa dos archivos, uno llamado '#.json' donde # es el número de la etapa y, otro llamado 'Grid_#.json' que contiene
-        la red asociada a la etapa casi lista para simular lpf.
-
-        Todo es creado dentro del directorio predefinido 'TempData'.
-        La variable a imprimir es un diccionario escrito como json, que posee la información solicitada.
-        No retorna valor alguno.
+        Crea una tupla de dos pandas DataFrame (Solar y eólico, respectivamente) con los datos del año fijo (comprimido de histórico).
+        Para cada Etapa renovable se identifica: El promedio de valores de potencias y, la desviación estándar de dichas potencias de generación
+        renovable solar (1) y eólicas (4).
+            1.- Crea nuevas columnas para ambos DataFrame Renovables, llamados según su tipo + número (desde cero). Cada una duplicada y agregada '_mean' o '_std'.
+            2.- Por cada etapa renovable, resuelve para ambos DataFrame.
+                2.1.- Recorta los meses, dias, y horas que representan la etapa renovable desde el año fijo.
+                2.2.- Normaliza valores respecto al máximo encontrado en la serie anual (año fijo).
+                2.3.- Calcula el promedio y desviación estándar de todas las columnas con datos.
+                2.4.- Asigna respectivas columnas de salida y retorna tupla.
+        Retorna una tupla con el pandas DataFrame creado para Solar, y la de Eólicos.
     """
-    DictImprimir = {
-        'BD_DemProy': BD_DemProy.loc[EtaNum, :].to_dict(),
-        'BD_Hidrologias_futuras': BD_Hidrologias_futuras.loc[EtaNum, :].to_dict(),
-        'BD_TSFProy': BD_TSFProy.loc[EtaNum, :].to_dict(),
-        'BD_RedesXEtapa_ExtraData': BD_RedesXEtapa[EtaNum]['ExtraData']
-    }
+    logger.debug("! entrando en función: 'GenHistorica_a_Etapa' (aux_funcs.py) ...")
+    # Obtiene nombre columnas y renombra como Solar0. Las duplica y agrega '_mean' y '_std' a cada una.
+    # ColumnasSolar = [ "Solar{}_{}".format(Num + 1, ParamNom) for Num in range(len(DF_histsolar.columns)) for ParamNom in ['mean', 'std'] ]  # opción genérica
+    ColumnasSolar = [ "Solar_{}".format(ParamNom) for Num in range(len(DF_histsolar.columns)) for ParamNom in ['mean', 'std'] ]  # permite solo un tipo de solar
+    # Obtiene nombre columnas y renombra como EolicaZ0, EolicaZ1, ... . Las duplica y agrega '_mean' y '_std' a cada una.
+    ColumnasEolicas = [ "EólicaZ{}_{}".format(Num + 1, ParamNom) for Num in range(len(DF_histeolicas.columns)) for ParamNom in ['mean', 'std'] ]
+    # Inicializa los pandas DataFrame de Salida
+    DF_Salida_Solar = pd__DataFrame(columns=ColumnasSolar, index=DF_Etapas.index)
+    DF_Salida_Eolico = pd__DataFrame(columns=[ColumnasEolicas], index=DF_Etapas.index)
+    # Calcula el máximo anual para normalizar posteriormente
+    for EtaNum, Etapa in DF_Etapas.iterrows():
+        for DF_ERNC in [DF_histsolar, DF_histeolicas]:  # calcula para ambos DataFrame
+            MaximoAnual = DF_ERNC.max(axis=0)
+            # OBTIENE HORAS REPRESENTATIVAS
+            FInicioEta = Etapa['FechaIni_EtaTopo']
+            FTerminoEta = Etapa['FechaFin_EtaTopo']
+            #
+            # Identifica de la EtaTopo
+            Cond1 = FInicioEta.month <= DF_ERNC.index.get_level_values('Mes')
+            Cond2 = DF_ERNC.index.get_level_values('Mes') <= FTerminoEta.month
+            # Asegura de filtrar adecuadamente los DataFrame (debe ser cíclico si existe cambio de año)
+            if FInicioEta.month <= FTerminoEta.month:
+                DF_ERNC = DF_ERNC[ Cond1 & Cond2 ]
+            elif FTerminoEta.month < FInicioEta.month:
+                DF_ERNC = DF_ERNC[ Cond1 | Cond2 ]
 
-    # Guarda Datos de etapa en archivo JSON
-    with open(TempFolderName + os__path__sep + "{}.json".format(EtaNum), 'w') as f:
-        json__dump(DictImprimir, f)
+            #
+            # identifica los días de los meses límite que pertenecen a la etapa
+            Cond1 = DF_ERNC.index.get_level_values('Dia') < FInicioEta.day  # días de los meses fuera
+            Cond1 &= FInicioEta.month == DF_ERNC.index.get_level_values('Mes')  # mes límite
+            Cond2 = FTerminoEta.day < DF_ERNC.index.get_level_values('Dia')  # días de los meses fuera
+            Cond2 &= FTerminoEta.month == DF_ERNC.index.get_level_values('Mes')  # mes límite
+            # Asegura de filtrar adecuadamente los DataFrame (debe ser cíclico si existe cambio de año)
+            if FInicioEta.day <= FTerminoEta.day:
+                DF_ERNC = DF_ERNC[ ~Cond1 & ~Cond2 ]
+            elif FTerminoEta.day < FInicioEta.day:
+                DF_ERNC = DF_ERNC[ ~Cond1 | ~Cond2 ]
 
-    # Exporta la red a archivo pickle. Necesario para exportar tipos de lineas. Más pesado que JSON y levemente lento pero funcional... :c
-    pp__to_pickle( BD_RedesXEtapa[EtaNum]['PandaPowerNet'], TempFolderName + os__path__sep + "Grid_{}.p".format(EtaNum) )
+            #
+            # Filtra el DF_ERNC por las horas de los DÍA límite
+            Cond1 = DF_ERNC.index.get_level_values('Hora') < FInicioEta.hour  # horas de los todos los días no incorporadas
+            Cond1 &= FInicioEta.day == DF_ERNC.index.get_level_values('Dia')  # día límite
+            Cond2 = FTerminoEta.hour < DF_ERNC.index.get_level_values('Hora')  # horas de los todos los días no incorporadas
+            Cond2 &= FTerminoEta.day == DF_ERNC.index.get_level_values('Dia')  # día límite
+            if FInicioEta.day <= FTerminoEta.day:
+                DF_ERNC = DF_ERNC[ ~Cond1 & ~Cond2 ]
+            elif FTerminoEta.day < FInicioEta.day:
+                DF_ERNC = DF_ERNC[ ~Cond1 | ~Cond2 ]
 
-    return
+            #
+            # Filtra DataFrame dejando las horas de interés de la etapa renovable
+            DF_ERNC = DF_ERNC[ (Etapa['HoraDiaIni'] <= DF_ERNC.index.get_level_values('Hora')) &
+                               (DF_ERNC.index.get_level_values('Hora') <= Etapa['HoraDiaFin']) ]
+            # Se eliminan multindex y columnas previamente indices ('Mes' y 'Dia'). Horas Se dejan como index
+            DF_ERNC = DF_ERNC.reset_index().drop(labels=['Mes', 'Dia'], axis='columns').set_index('Hora')
+            # Se normalizan potencias c/r al máximo total
+            DF_ERNC = DF_ERNC.divide(MaximoAnual)
+
+            #
+            # Encuentra el promedio de los valores
+            Arr_Mean = DF_ERNC.mean(axis='index').values
+            Arr_Mean[Arr_Mean < 0] = 0  # asegura que no existe potencia negativa
+            # Encuentra la desviación estándar
+            Arr_Std = DF_ERNC.std(axis='index').values
+
+            # Asigna valores a los DataFrame de salida según la etapa
+            if DF_ERNC.columns.tolist() == DF_histsolar.columns.tolist():
+                DF_Salida_Solar.loc[EtaNum, DF_Salida_Solar.filter(regex=r'_mean', axis='columns').columns] = Arr_Mean
+                DF_Salida_Solar.loc[EtaNum, DF_Salida_Solar.filter(regex=r'_std', axis='columns').columns] = Arr_Std
+                # DF_Salida_Solar.loc[EtaNum, DF_Salida_Solar.columns.str.contains('_mean$')] = Arr_Mean
+                # DF_Salida_Solar.loc[EtaNum, DF_Salida_Solar.columns.str.contains('_std$')] = Arr_Std
+            elif DF_ERNC.columns.tolist() == DF_histeolicas.columns.tolist():
+                DF_Salida_Eolico.loc[EtaNum, DF_Salida_Eolico.filter(regex=r'_mean', axis='columns').columns] = Arr_Mean
+                DF_Salida_Eolico.loc[EtaNum, DF_Salida_Eolico.filter(regex=r'_std', axis='columns').columns] = Arr_Std
+    logger.debug("! saliendo en función: 'GenHistorica_a_Etapa' (aux_funcs.py) ...")
+    return (DF_Salida_Solar, DF_Salida_Eolico)
+
+
+def GeneradorDemanda(Medias = [], Sigmas = [], NCargas = []):
+    """
+        Genera un iterador de valor p.u. de las demandas en cada carga (Ésta debe ser multiplicada por el valor nominal de la carga al momento
+        de modificarse, limitándose a ser positivos). El iterador crea un arreglo por cada etapa para cada carga (largo variable), por lo que cada vez que se itere se generan
+        los valores en cada etapa.
+
+        Notar que se debe obtener previamente el número de cargas en cada etapa.
+
+        Cada vez que se llama retorna una tupla con: (EtaNum, arrayDemPU)
+    """
+    # Verifica que el largo de Medias y Sigmas sea igual, de lo contrario retorna ValueError
+    if len(Medias) != len(Sigmas) != NCargas:
+        msg = "El numero de valores de media y desviaciones estándar (sigma) son diferentes."
+        logger.error(msg)
+        raise ValueError(msg)
+
+    NEta = len(Medias)  # puede tomarse cualquier otro largo
+    for EtaNum in range(NEta):
+        # cambiar array a dataframe de cargas con indice Grid!!!!!!!
+        yield ( EtaNum + 1, np__random__normal(loc=Medias[EtaNum], scale=Sigmas[EtaNum], size=NCargas[EtaNum]) )
+
+
+def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = None, DF_PE_Hid = None, DesvEstDespCenEyS=1, DesvEstDespCenP=1):
+    """
+        Genera un iterador de valores p.u. de las potencias de despacho en cada unidad de generación de las distintas tecnologías. Estos valores
+        deben ser multiplicados por el valor nominal de potencia de generación de la unidad y limitados entre pmin y pmax). El iterador crea un
+        arreglo por cada etapa para cada carga (largo variable), por lo que cada vez que se itere se generan los valores en cada etapa.
+
+        Notar que se debe obtener previamente el número de cargas en cada etapa. Los parámetros ingresados deben tener largo del número de etapas.
+
+        Lista_TiposGen  # lista por etapa de lo tipos de generación en Dataframe (numero gen en Grid)
+        DF_HistGenERNC  # tupla de dos pandas DataFrame (DF_Solar, DF_Eólico)
+        Lista_TecGenSlack  # lista
+        DF_TSF  # pandas DataFrame, para cada tecnología que recurra con falla se asigna
+        DF_PE_Hid  # pandas DataFrame
+
+        Para cada siguiente iteración de la función generadora, retorna una tupla de (EtaNum, DF_Pot_despchada_indiceGrid)
+    """
+    # Corrobora que el largo de los parámetros de entrada (teóricamente el Número de etapas), sea igual. De lo contrario retorna ValueError
+    if len(Lista_TiposGen) != DF_HistGenERNC[0].shape[0] != DF_HistGenERNC[1].shape[0] != DF_TSF.shape[0] != DF_PE_Hid.shape[0]:
+        msg = "El numero de etapa en los parámetros de entrada no coinciden."
+        logger.error(msg)
+        raise ValueError(msg)
+
+    # Obtiene el número de etapas
+    NEta = len(Lista_TiposGen)
+    # para cada siguiente iteración de la función generadora, retorna una tupla de (EtaNum, DF_Pot_despchada_indiceGrid)
+    for EtaNum in range(NEta):
+        # Número de generadores
+        # NGen = Lista_TiposGen[EtaNum].shape[0]
+        # Inicializa DataFrame (nueva columna vacía) para potencias despachadas
+        DF_IndGen_PDispatched = pd__concat([ Lista_TiposGen[EtaNum], pd__DataFrame(columns=['PGen']) ], axis='columns')
+
+        #
+        # NUMERO DE TIPOS DE CENTRALES
+        #
+        # Obtiene nombres de los tipos ERNC (solar [0] y eólico [1])
+        NombresERNCTipo = [GenTecNom[0] for RowNum, GenTecNom in Lista_TiposGen[EtaNum].iterrows() if ('EólicaZ' in GenTecNom[0]) | ('Solar' in GenTecNom[0])]
+        # Calcula los indice de centrales de Embalse en la Grilla
+        IndGenEmb = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Embalse' ].index.values
+        # Calcula los indice de centrales de Serie en la Grilla
+        IndGenSerie = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Serie' ].index.values
+        # Calcula los indice de centrales de Pasada en la Grilla
+        IndGenPasada = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Pasada'].index.values
+        # Calcula los indice de centrales de Carbón en la Grilla
+        IndGenTermoCarbon = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Carbón'].index.values
+        # Calcula los indice de centrales de Gas-Diésel en la Grilla
+        IndGenTermoGasDie = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Gas-Diésel'].index.values
+        # Calcula los indice de centrales de Otras en la Grilla
+        IndGenTermoOtras = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Otras'].index.values
+        #
+        #
+
+        #
+        # Encuentra el valor de despacho, aplicado con TSF
+        #
+        # Por cada nombre ERNC se obtiene e valor aleatorio, según sus medias y desviaciones estándar
+        for NomERNC in NombresERNCTipo:
+            if 'Solar' in NomERNC:
+                Power_pu = np__random__normal( loc=float(DF_HistGenERNC[0].loc[EtaNum + 1, NomERNC + '_mean']),
+                                               scale=float(DF_HistGenERNC[0].loc[EtaNum + 1, NomERNC + '_std']))
+                # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
+                TasaFalla = DF_TSF[NomERNC][EtaNum + 1]
+                # La Tasa controla la probabilidad de falla
+                Power_pu *= np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla])
+            elif 'EólicaZ' in NomERNC:
+                Power_pu = np__random__normal( loc=float(DF_HistGenERNC[1].loc[EtaNum + 1, NomERNC + '_mean']),
+                                               scale=float(DF_HistGenERNC[1].loc[EtaNum + 1, NomERNC + '_std']))
+                # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
+                TasaFalla = DF_TSF[NomERNC][EtaNum + 1]
+                # La Tasa controla la probabilidad de falla
+                Power_pu *= np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla])
+            else:
+                msg = "NomERNC no es 'Solar' ni 'Eólico' de zona alguna!"
+                logger.error(msg)
+                raise ValueError(msg)
+            # verifica que Power_pu sea positivo o cero, y limitado entre 0 y 1, inclusive
+            Power_pu = 1.0 if Power_pu > 1 else 0 if Power_pu < 0 else Power_pu
+            DF_IndGen_PDispatched.loc[DF_IndGen_PDispatched['type'] == NomERNC, 'PGen'] = Power_pu
+
+        # Para las tecnologías hidráulicas asigna promedio según PE y desv según parámetros 'DesvEstDespCenEyS' y 'DesvEstDespCenP'
+        if len(IndGenEmb):  # EMBALSE
+            # valor de pdf gaussiana/normal
+            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum + 1, DF_PE_Hid.columns[0]],
+                                           scale=DesvEstDespCenEyS,
+                                           size=IndGenEmb.shape[0] )  # arrays
+            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
+            TasaFalla = DF_TSF['Embalse'][EtaNum + 1]
+            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
+            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenEmb.shape[0])
+            Power_pu *= ModifyPower_Array
+            # Corrige limitando valores mayores que 1 y menores que 0
+            Power_pu[ Power_pu < 0 ] = 0.0
+            Power_pu[ 1 < Power_pu ] = 1.0
+            # Asigna despacho al DataFrame
+            DF_IndGen_PDispatched.loc[ IndGenEmb, 'PGen'] = Power_pu
+
+        if len(IndGenSerie):  # SERIE
+            # valor de pdf gaussiana/normal
+            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum + 1, DF_PE_Hid.columns[0]],
+                                           scale=DesvEstDespCenEyS,
+                                           size=IndGenSerie.shape[0] )  # arrays
+            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
+            TasaFalla = DF_TSF['Serie'][EtaNum + 1]
+            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
+            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenSerie.shape[0])
+            Power_pu *= ModifyPower_Array
+            # Corrige limitando valores mayores que 1 y menores que 0
+            Power_pu[ Power_pu < 0 ] = 0.0
+            Power_pu[ 1 < Power_pu ] = 1.0
+            # Asigna despacho al DataFrame
+            DF_IndGen_PDispatched.loc[ IndGenSerie, 'PGen'] = Power_pu
+
+        if len(IndGenPasada):    # PASADA
+            # valor de pdf gaussiana/normal
+            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum + 1, DF_PE_Hid.columns[0]],
+                                           scale=DesvEstDespCenP,
+                                           size=IndGenPasada.shape[0] )  # arrays
+            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
+            TasaFalla = DF_TSF['Pasada'][EtaNum + 1]
+            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
+            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenPasada.shape[0])
+            Power_pu *= ModifyPower_Array
+            # Corrige limitando valores mayores que 1 y menores que 0
+            Power_pu[ Power_pu < 0 ] = 0.0
+            Power_pu[ 1 < Power_pu ] = 1.0
+            # Asigna despacho al DataFrame
+            DF_IndGen_PDispatched.loc[ IndGenPasada, 'PGen'] = Power_pu
+
+        if len(IndGenTermoCarbon):    # CARBON
+            # valor de pdf uniforme
+            Power_pu = np_random__uniform( low=0.0,
+                                           high=1.0,
+                                           size=IndGenTermoCarbon.shape[0] )  # arrays
+            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
+            TasaFalla = DF_TSF['Carbón'][EtaNum + 1]
+            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
+            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenTermoCarbon.shape[0])
+            Power_pu *= ModifyPower_Array
+            # Corrige limitando valores mayores que 1 y menores que 0
+            Power_pu[ Power_pu < 0 ] = 0.0
+            Power_pu[ 1 < Power_pu ] = 1.0
+            # Asigna despacho al DataFrame
+            DF_IndGen_PDispatched.loc[ IndGenTermoCarbon, 'PGen'] = Power_pu
+
+        if len(IndGenTermoGasDie):    # GAS-DIÉSEL
+            # valor de pdf uniforme
+            Power_pu = np_random__uniform( low=0.0,
+                                           high=1.0,
+                                           size=IndGenTermoGasDie.shape[0] )  # arrays
+            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
+            TasaFalla = DF_TSF['Gas-Diésel'][EtaNum + 1]
+            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
+            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenTermoGasDie.shape[0])
+            Power_pu *= ModifyPower_Array
+            # Corrige limitando valores mayores que 1 y menores que 0
+            Power_pu[ Power_pu < 0 ] = 0.0
+            Power_pu[ 1 < Power_pu ] = 1.0
+            # Asigna despacho al DataFrame
+            DF_IndGen_PDispatched.loc[ IndGenTermoGasDie, 'PGen'] = Power_pu
+
+        if len(IndGenTermoOtras):    # OTRAS
+            # valor de pdf uniforme
+            Power_pu = np_random__uniform( low=0.0,
+                                           high=1.0,
+                                           size=IndGenTermoOtras.shape[0] )  # arrays
+            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
+            TasaFalla = DF_TSF['Otras'][EtaNum + 1]
+            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
+            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenTermoOtras.shape[0])
+            Power_pu *= ModifyPower_Array
+            # Corrige limitando valores mayores que 1 y menores que 0
+            Power_pu[ Power_pu < 0 ] = 0.0
+            Power_pu[ 1 < Power_pu ] = 1.0
+            # Asigna despacho al DataFrame
+            DF_IndGen_PDispatched.loc[ IndGenTermoOtras, 'PGen'] = Power_pu
+
+        yield (EtaNum + 1, DF_IndGen_PDispatched)
+    pass

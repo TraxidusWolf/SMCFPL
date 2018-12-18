@@ -42,7 +42,7 @@ def read_sheets_to_dataframes(ruta, NombreLibro, NumParallelCPU):
         'in_smcfpl_mantcargas'   : ( 'LoadNom'       , 'FechaIni'     , 'FechaFin'     , 'DemMax_MW'   , 'DemMax_MVAr' , 'NomBarConn'    , 'Operativa')   ,
         'in_smcfpl_histsolar'    : ( 'Fecha'         , 'EgenMWh')     ,
         'in_smcfpl_histeolicas'  : ( 'Fecha'         , 'EgenMWhZ1'    , 'EgenMWhZ2'    , 'EgenMWhZ3'   , 'EgenMWhZ4')  ,
-        'in_smcfpl_tsfproy'      : ( 'Fecha'         , 'Carbón'       , 'Gas-Diésel'   , 'Otros'       , 'Solar'       , 'Embalse'       , 'Pasada'       , 'Serie'        , 'EólicaZ1'      , 'EólicaZ2'    , 'EólicaZ3'       , 'EólicaZ4')      ,
+        'in_smcfpl_tsfproy'      : ( 'Fecha'         , 'Carbón'       , 'Gas-Diésel'   , 'Otras'       , 'Solar'       , 'Embalse'       , 'Pasada'       , 'Serie'        , 'EólicaZ1'      , 'EólicaZ2'    , 'EólicaZ3'       , 'EólicaZ4')      ,
         'in_smcfpl_histhid'      : ( 'Año'           , 'abril'        , 'mayo'         , 'junio'       , 'julio'       , 'agosto'        , 'septiembre'   , 'octubre'      , 'noviembre'     , 'diciembre'   , 'enero'          , 'febrero'        , 'marzo'          , 'TOTAL')          ,
         'in_smcfpl_ParamHidEmb'  : ( ('Húmeda', 'CVmin') , ('Media', 'CVmin') , ('Húmeda', 'CVmax') , ('Media', 'CVmax') , ('Húmeda', 'CotaMax') , ('Seca', 'b') , ('Seca', 'CotaMin') , ('Media', 'CotaMax') , ('Seca', 'CVmin') , ('Seca', 'CotaMax') , ('Media', 'b') , ('Húmeda', 'b') , ('Húmeda', 'CotaMin') , ('Media', 'CotaMin') , ('Seca', 'CVmax') ) ,
         'in_smcfpl_seriesconf'   : ( 'NombreSerie'   , 'CenNom'       , 'FuncCosto')
@@ -65,8 +65,7 @@ def read_sheets_to_dataframes(ruta, NombreLibro, NumParallelCPU):
     DFs_entrada = {}
 
     """Lee solo las hojas que son necesarias, al igual que las columnas que lo son"""
-    LeeInputsEnSerie = False
-    if LeeInputsEnSerie:   # Lee archivos en Serie
+    if not NumParallelCPU:   # Lee archivos en Serie
         for Hoja, variables in HojasNecesarias.items():
             if Hoja == 'in_smcfpl_ParamHidEmb':
                 # caso particular ya que debe ser un multindex de columnas variables (en función del nombre de embalses). Notar que queda transpuesto
@@ -75,9 +74,9 @@ def read_sheets_to_dataframes(ruta, NombreLibro, NumParallelCPU):
                 DFs_entrada['df_' + Hoja] = Lee_Hoja_planilla(RutaCompleta, Hoja, False, *variables)
     else:  # Lee archivos en Paralelo
         # Parámetros de paralelismo
-        if NumParallelCPU:
+        if isinstance(NumParallelCPU, int):
             Ncpu = NumParallelCPU
-        else:
+        elif NumParallelCPU == 'Max':
             Ncpu = mu__cpu_count()
         logger.info("Leyendo entradas en paralelo. Utilizando máximo {} procesos simultáneos.".format(Ncpu))
         Pool = mu__Pool(Ncpu)
