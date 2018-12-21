@@ -44,7 +44,7 @@ def read_sheets_to_dataframes(ruta, NombreLibro, NumParallelCPU):
         'in_smcfpl_histeolicas'  : ( 'Fecha'         , 'EgenMWhZ1'    , 'EgenMWhZ2'    , 'EgenMWhZ3'   , 'EgenMWhZ4')  ,
         'in_smcfpl_tsfproy'      : ( 'Fecha'         , 'Carbón'       , 'Gas-Diésel'   , 'Otras'       , 'Solar'       , 'Embalse'       , 'Pasada'       , 'Serie'        , 'EólicaZ1'      , 'EólicaZ2'    , 'EólicaZ3'       , 'EólicaZ4')      ,
         'in_smcfpl_histhid'      : ( 'Año'           , 'abril'        , 'mayo'         , 'junio'       , 'julio'       , 'agosto'        , 'septiembre'   , 'octubre'      , 'noviembre'     , 'diciembre'   , 'enero'          , 'febrero'        , 'marzo'          , 'TOTAL')          ,
-        'in_smcfpl_ParamHidEmb'  : ( ('Húmeda', 'CVmin') , ('Media', 'CVmin') , ('Húmeda', 'CVmax') , ('Media', 'CVmax') , ('Húmeda', 'CotaMax') , ('Seca', 'b') , ('Seca', 'CotaMin') , ('Media', 'CotaMax') , ('Seca', 'CVmin') , ('Seca', 'CotaMax') , ('Media', 'b') , ('Húmeda', 'b') , ('Húmeda', 'CotaMin') , ('Media', 'CotaMin') , ('Seca', 'CVmax') ) ,
+        'in_smcfpl_ParamHidEmb'  : ( ('Humeda', 'CVmin') , ('Media', 'CVmin') , ('Humeda', 'CVmax') , ('Media', 'CVmax') , ('Humeda', 'CotaMax') , ('Seca', 'b') , ('Seca', 'CotaMin') , ('Media', 'CotaMax') , ('Seca', 'CVmin') , ('Seca', 'CotaMax') , ('Media', 'b') , ('Humeda', 'b') , ('Humeda', 'CotaMin') , ('Media', 'CotaMin') , ('Seca', 'CVmax') ) ,
         'in_smcfpl_seriesconf'   : ( 'NombreSerie'   , 'CenNom'       , 'FuncCosto')
     }
     # Ruta completa (relativa) donde se encuentra el archivo

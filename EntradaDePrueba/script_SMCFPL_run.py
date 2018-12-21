@@ -6,7 +6,7 @@ import smcfpl
 import datetime as dt
 print( "smcfpl version: {}".format(smcfpl.__version__) )
 
-InFilePath = "DatosEntrada_39Bus_v5.xlsx"    # (str) Ruta relativa de Planilla xls|xlsx con hojas con nombre de los archivos de entrada.
+InFilePath = "./DatosEntrada/DatosEntrada_39Bus_v5.xlsx"    # (str) Ruta relativa de Planilla xls|xlsx con hojas con nombre de los archivos de entrada.
 OutFilePath = "./DatosSalida"   # (str) Ruta relativa del Directorio que almacena las salidas. Debe existir previamente.
 
 # Crea el caso de estudio ingresando los parámetros de la simulación
@@ -21,13 +21,16 @@ Simulacion = smcfpl.Simulacion(
     NumVecesDem = 5,
     NumVecesGen = 10,
     PerdCoseno = True,
-    PEHidSeca = 0.8,
-    PEHidMed = 0.5,
-    PEHidHum = 0.2,
+    PEHidSeca = 0.8,  # 0 <= (float) <= 1
+    PEHidMed = 0.5,  # 0 <= (float) <= 1
+    PEHidHum = 0.2,  # 0 <= (float) <= 1
+    DesvEstDespCenEyS=0.1,  # desviación estándar considerada para el despacho de centrales Embalse y Serie
+    DesvEstDespCenP=0.2,  # desviación estándar considerada para el despacho de centrales Pasada
     ParallelMode = False,
-    NumDespParall = 4,
-    UsaArchivosParaEtapas=False,
-    UsaSlurm=dict(NumNodos=2, NodeWaittingTime=dt.timedelta(seconds=10), ntasks=1, cpu_per_tasks=1),  # considera ssi UsaArchivosParaEtapas=True
+    NumParallelCPU = 'Max',  # Puede ser False: No usa paralelismo ni lectura ni cálculo, 'Max' para utilizar todos lo procesadores fisicos, o un integer para modificar el tamaño de la pool
+    UsaSlurm=False,
+    # UsaSlurm=dict(NumNodos=2, NodeWaittingTime=dt.timedelta(seconds=10), ntasks=1, cpu_per_tasks=1),  # False para no ser considerado
 )
 
-# Simulacion.run()
+# Simulacion.run(delete_TempData=False)
+Simulacion.run(delete_TempData = True)

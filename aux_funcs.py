@@ -573,26 +573,75 @@ def GenHistorica_a_Etapa(DF_Etapas, DF_histsolar, DF_histeolicas):
     return (DF_Salida_Solar, DF_Salida_Eolico)
 
 
-def GeneradorDemanda(Medias = [], Sigmas = [], NCargas = []):
+def GeneradorDemanda(DF_TasaCLib = pd__DataFrame(), DF_TasaCReg = pd__DataFrame(), DF_DesvDec = pd__DataFrame(), ListTypoCargasEta = [[]]):
     """
-        Genera un iterador de valor p.u. de las demandas en cada carga (Ésta debe ser multiplicada por el valor nominal de la carga al momento
-        de modificarse, limitándose a ser positivos). El iterador crea un arreglo por cada etapa para cada carga (largo variable), por lo que cada vez que se itere se generan
-        los valores en cada etapa.
+        Genera un iterador de valor p.u. de las demandas en cada carga (Ésta debe ser multiplicada por el valor inicial nominal de la carga al momento
+        de implementarse). El iterador crea un arreglo por cada etapa para cada carga (largo variable), por lo que cada vez que se itere se generan
+        los valores en cada etapa, con valores de tasa y desviación absolutos (asegura signo positivo).
 
-        Notar que se debe obtener previamente el número de cargas en cada etapa.
+        Notar que se debe obtener previamente el número de cargas en cada etapa, en este caso
+        está implícito en ListTypoCargasEta para cada etapa (en indices).
 
-        Cada vez que se llama retorna una tupla con: (EtaNum, arrayDemPU)
+        Lo que se busca finalmente, y después de esta función, es obtienes una
+        demanda para cada carga que sea variable según la pdf normal. Notar que
+        aquí se varía la tasa de crecimiento en lugar de la demanda bruta. Variar
+        esta última produce el mismo efecto que variar directamente la tasa ya que
+        la desviación estándar esta normalizada.
+
+        :param DF_TasaCLib: DataFrame con valores promedio de la tasa de crecimiento de Clientes
+                       Libres. Posee indices de etapas.
+        :type DF_TasaCLib: pandas DataFrame.
+        :param DF_TasaCReg: DataFrame con valores promedio de la tasa de crecimiento de Clientes
+                       Regulados. Posee indices de etapas.
+        :type DF_TasaCReg: pandas DataFrame.
+        :param DF_DesvDec: DataFrame con valores de desviación estándar en la predicción de la
+                       demanda, que es utilizada para la distribución de los clientes Libres y
+                       Regulados. Posee indices de etapas.
+        :type DF_DesvDec: pandas DataFrame.
+        :param ListTypoCargasEta: Tipo de las cargas ('L' o 'R') que posee la Grilla en cada etapa.
+        :type ListTypoCargasEta: Lista (0-indexed) de pandas DataFrame.
+
+        Cada vez que se llama retorna una tupla con: (EtaNum, pandas DataFrame)
+
+        Pasos:
+            1.- Verifica consistencia del número de etapas en entradas
+            2.- Para cada Etapa (0-indexed),
+                2.1.- Obtiene indices de cargas tipo 'L'
+                2.2.- Obtiene indices de cargas tipo 'R'
+                2.3.- Genera un arreglo aleatorio de largo del Número de índices.
+                      La media (loc) y desviación estándar (scale) según el tipo: DF_TasaCLib | DF_TasaCReg,
+                      incluyéndose lo de DF_DesvDec.
+                2.4.- Agrega arreglo al DataFrame de Salida.
+                2.5.- Retorna la tupla (EtaNum 1-indexed, pandas DataFrame)
     """
-    # Verifica que el largo de Medias y Sigmas sea igual, de lo contrario retorna ValueError
-    if len(Medias) != len(Sigmas) != NCargas:
-        msg = "El numero de valores de media y desviaciones estándar (sigma) son diferentes."
+    # Verifica que el largo de Etapas sean coincidentes, de lo contrario retorna ValueError
+    if DF_TasaCLib.shape[0] != DF_TasaCReg.shape[0] != DF_DesvDec.shape[0] != len(ListTypoCargasEta):
+        msg = "El numero de etapas en DF_TasaCLib, DF_TasaCReg y DF_DesvDec son diferentes del tamaño de ListTypoCargasEta."
         logger.error(msg)
         raise ValueError(msg)
 
-    NEta = len(Medias)  # puede tomarse cualquier otro largo
+    NEta = DF_TasaCLib.shape[0]  # puede tomarse cualquier otro largo
     for EtaNum in range(NEta):
-        # cambiar array a dataframe de cargas con indice Grid!!!!!!!
-        yield ( EtaNum + 1, np__random__normal(loc=Medias[EtaNum], scale=Sigmas[EtaNum], size=NCargas[EtaNum]) )
+        DF_Salida = pd__DataFrame( index=ListTypoCargasEta[EtaNum].index,
+                                   columns=['PDem_pu'])
+        # Obtiene los indices de las cargas en la etapa actual que sean Clientes Libres
+        IndCLib = ListTypoCargasEta[EtaNum][ ListTypoCargasEta[EtaNum]['type'] == 'L' ].index
+        # Obtiene los indices de las cargas en la etapa actual que sean Clientes Regulados
+        IndCReg = ListTypoCargasEta[EtaNum][ ListTypoCargasEta[EtaNum]['type'] == 'R' ].index
+
+        #
+        # Nueva tasa de los Clientes Libres
+        dataCLib = np__random__normal( loc=float(DF_TasaCLib.loc[EtaNum + 1, :]),
+                                       scale=float(DF_DesvDec.loc[EtaNum + 1, :]),
+                                       size=len(IndCLib))
+        # Nueva tasa de los Clientes Regulados
+        dataCReg = np__random__normal( loc=float(DF_TasaCReg.loc[EtaNum + 1, :]),
+                                       scale=float(DF_DesvDec.loc[EtaNum + 1, :]),
+                                       size=len(IndCReg))
+        # Asigna los datos Regulados y Libres al pandas DataFrame de salida
+        DF_Salida.loc[IndCLib, 'PDem_pu'] = abs(dataCLib)  # asegura que la demanda demande potencia y no la genere
+        DF_Salida.loc[IndCReg, 'PDem_pu'] = abs(dataCReg)  # asegura que la demanda demande potencia y no la genere
+        yield ( EtaNum + 1,  DF_Salida)
 
 
 def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = None, DF_PE_Hid = None, DesvEstDespCenEyS=1, DesvEstDespCenP=1):
@@ -603,13 +652,27 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
 
         Notar que se debe obtener previamente el número de cargas en cada etapa. Los parámetros ingresados deben tener largo del número de etapas.
 
-        Lista_TiposGen  # lista por etapa de lo tipos de generación en Dataframe (numero gen en Grid)
+        Lista_TiposGen  # lista por etapa de lo tipos de generación en DataFrame (numero gen en Grid)
         DF_HistGenERNC  # tupla de dos pandas DataFrame (DF_Solar, DF_Eólico)
         Lista_TecGenSlack  # lista
         DF_TSF  # pandas DataFrame, para cada tecnología que recurra con falla se asigna
         DF_PE_Hid  # pandas DataFrame
 
         Para cada siguiente iteración de la función generadora, retorna una tupla de (EtaNum, DF_Pot_despchada_indiceGrid)
+
+        Pasos:
+            1.- Verifica que el largo de etapa en todas las entradas sea consistente, de lo contrario error.
+            2.- Para cada Etapa (0-indexed),
+                2.1.- Obtiene los indices de los tipos de centrales.
+                2.2.- En caso de ser ERNC, identifica los nombres, genera despacho para cada uno y, les aplica TSF sobre despacho según entradas.
+                2.3.- En caso de Embalse, genera despacho para cada uno y, les aplica TSF sobre despacho según entradas.
+                2.4.- En caso de Serie, genera despacho para cada uno y, les aplica TSF sobre despacho según entradas.
+                2.5.- En caso de Pasada, genera despacho para cada uno y, les aplica TSF sobre despacho según entradas.
+                2.6.- En caso de Carbón, genera despacho para cada uno y, les aplica TSF sobre despacho según entradas.
+                2.7.- En caso de Gas-Diésel, genera despacho para cada uno y, les aplica TSF sobre despacho según entradas.
+                2.8.- En caso de Otras, genera despacho para cada uno y, les aplica TSF sobre despacho según entradas.
+                2.9.- Retorna la tupla (EtaNum 1-indexed, pandas DataFrame)
+
     """
     # Corrobora que el largo de los parámetros de entrada (teóricamente el Número de etapas), sea igual. De lo contrario retorna ValueError
     if len(Lista_TiposGen) != DF_HistGenERNC[0].shape[0] != DF_HistGenERNC[1].shape[0] != DF_TSF.shape[0] != DF_PE_Hid.shape[0]:
@@ -624,7 +687,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
         # Número de generadores
         # NGen = Lista_TiposGen[EtaNum].shape[0]
         # Inicializa DataFrame (nueva columna vacía) para potencias despachadas
-        DF_IndGen_PDispatched = pd__concat([ Lista_TiposGen[EtaNum], pd__DataFrame(columns=['PGen']) ], axis='columns')
+        DF_IndGen_PDispatched = pd__concat([ Lista_TiposGen[EtaNum], pd__DataFrame(columns=['PGen_pu']) ], axis='columns')
 
         #
         # NUMERO DE TIPOS DE CENTRALES
@@ -671,7 +734,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
                 raise ValueError(msg)
             # verifica que Power_pu sea positivo o cero, y limitado entre 0 y 1, inclusive
             Power_pu = 1.0 if Power_pu > 1 else 0 if Power_pu < 0 else Power_pu
-            DF_IndGen_PDispatched.loc[DF_IndGen_PDispatched['type'] == NomERNC, 'PGen'] = Power_pu
+            DF_IndGen_PDispatched.loc[DF_IndGen_PDispatched['type'] == NomERNC, 'PGen_pu'] = Power_pu
 
         # Para las tecnologías hidráulicas asigna promedio según PE y desv según parámetros 'DesvEstDespCenEyS' y 'DesvEstDespCenP'
         if len(IndGenEmb):  # EMBALSE
@@ -688,7 +751,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
             Power_pu[ Power_pu < 0 ] = 0.0
             Power_pu[ 1 < Power_pu ] = 1.0
             # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenEmb, 'PGen'] = Power_pu
+            DF_IndGen_PDispatched.loc[ IndGenEmb, 'PGen_pu'] = Power_pu
 
         if len(IndGenSerie):  # SERIE
             # valor de pdf gaussiana/normal
@@ -704,7 +767,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
             Power_pu[ Power_pu < 0 ] = 0.0
             Power_pu[ 1 < Power_pu ] = 1.0
             # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenSerie, 'PGen'] = Power_pu
+            DF_IndGen_PDispatched.loc[ IndGenSerie, 'PGen_pu'] = Power_pu
 
         if len(IndGenPasada):    # PASADA
             # valor de pdf gaussiana/normal
@@ -720,7 +783,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
             Power_pu[ Power_pu < 0 ] = 0.0
             Power_pu[ 1 < Power_pu ] = 1.0
             # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenPasada, 'PGen'] = Power_pu
+            DF_IndGen_PDispatched.loc[ IndGenPasada, 'PGen_pu'] = Power_pu
 
         if len(IndGenTermoCarbon):    # CARBON
             # valor de pdf uniforme
@@ -736,7 +799,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
             Power_pu[ Power_pu < 0 ] = 0.0
             Power_pu[ 1 < Power_pu ] = 1.0
             # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenTermoCarbon, 'PGen'] = Power_pu
+            DF_IndGen_PDispatched.loc[ IndGenTermoCarbon, 'PGen_pu'] = Power_pu
 
         if len(IndGenTermoGasDie):    # GAS-DIÉSEL
             # valor de pdf uniforme
@@ -752,7 +815,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
             Power_pu[ Power_pu < 0 ] = 0.0
             Power_pu[ 1 < Power_pu ] = 1.0
             # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenTermoGasDie, 'PGen'] = Power_pu
+            DF_IndGen_PDispatched.loc[ IndGenTermoGasDie, 'PGen_pu'] = Power_pu
 
         if len(IndGenTermoOtras):    # OTRAS
             # valor de pdf uniforme
@@ -768,7 +831,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
             Power_pu[ Power_pu < 0 ] = 0.0
             Power_pu[ 1 < Power_pu ] = 1.0
             # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenTermoOtras, 'PGen'] = Power_pu
+            DF_IndGen_PDispatched.loc[ IndGenTermoOtras, 'PGen_pu'] = Power_pu
 
         yield (EtaNum + 1, DF_IndGen_PDispatched)
     pass

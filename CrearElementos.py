@@ -1,11 +1,13 @@
-from smcfpl.in_out_files import read_sheets_to_dataframes
+from smcfpl.in_out_files import read_sheets_to_dataframes as smcfpl__in_out_files__read_sheets_to_dataframes
+from smcfpl.in_out_files import ImprimeBDs as smcfpl__in_out_files__ImprimeBDs
 from os import sep as os__sep
-from os.path import exists as os__path__exists, sep as os__path__sep
+from os.path import exists as os__path__exists
 from os import makedirs as os__makedirs
 from sys import executable as sys__executable
 from subprocess import run as sp__run, PIPE as sp__PIPE
 from pandas import DataFrame as pd__DataFrame
 from pandas import concat as pd__concat
+from numpy import tile as np__tile
 from datetime import datetime as dt
 from dateutil import relativedelta as du__relativedelta
 from shutil import rmtree as shutil__rmtree
@@ -13,9 +15,10 @@ from pandapower import create_empty_network as pp__create_empty_network, create_
 from pandapower import create_line as pp__create_line, create_std_types as pp__create_std_types
 from pandapower import create_transformer as pp__create_transformer, create_transformer3w as pp__create_transformer3w
 from pandapower import create_load as pp__create_load, create_gen as pp__create_gen
-from pandapower import create_ext_grid as pp__create_ext_grid, to_pickle as pp__to_pickle
+from pandapower import create_ext_grid as pp__create_ext_grid
+from pandapower.topology import unsupplied_buses as pp__topology__unsupplied_buses
+from pandapower import drop_inactive_elements as pp__drop_inactive_elements
 from multiprocessing import cpu_count as mu__cpu_count, Pool as mu__Pool
-from json import dump as json__dump
 import smcfpl.aux_funcs as aux_smcfpl
 import smcfpl.SendWork2Nodes as SendWork2Nodes
 import smcfpl.NucleoCalculo as NucleoCalculo
@@ -86,7 +89,7 @@ class Simulacion(object):
         FileName = self.InFilePath.split(os__sep)[-1]
         PathInput = self.InFilePath.split(os__sep)[:-1]
         # lee archivos de entrada
-        self.DFs_Entradas = read_sheets_to_dataframes(os__sep.join(PathInput), FileName, NumParallelCPU)
+        self.DFs_Entradas = smcfpl__in_out_files__read_sheets_to_dataframes(os__sep.join(PathInput), FileName, NumParallelCPU)
         # Determina duración de las etapas  (1-indexed)
         self.BD_Etapas = Crea_Etapas(self.DFs_Entradas['df_in_smcfpl_mantbarras'],
                                      self.DFs_Entradas['df_in_smcfpl_manttx'],
@@ -103,20 +106,28 @@ class Simulacion(object):
         # IDENTIFICA LA INFORMACIÓN QUE LE CORRESPONDE A CADA ETAPA (Siguiente BD son todas en etapas):
         #
         # Calcula y convierte valor a etapas de la desviación histórica de la demanda... (pandas Dataframe)
-        self.BD_DemSistDesv = aux_smcfpl.DesvDemandaHistoricaSistema_a_Etapa(self.DFs_Entradas['df_in_scmfpl_histdemsist'], self.BD_Etapas)
+        self.BD_DemSistDesv = aux_smcfpl.DesvDemandaHistoricaSistema_a_Etapa( self.DFs_Entradas['df_in_scmfpl_histdemsist'],
+                                                                              self.BD_Etapas)
         # Obtiene y convierte la demanda proyectada a cada etapas... (pandas Dataframe)
-        self.BD_DemTasaCrecEsp = aux_smcfpl.TasaDemandaEsperada_a_Etapa(self.DFs_Entradas['df_in_smcfpl_proydem'], self.BD_Etapas, self.FechaComienzo, self.FechaTermino)
+        self.BD_DemTasaCrecEsp = aux_smcfpl.TasaDemandaEsperada_a_Etapa( self.DFs_Entradas['df_in_smcfpl_proydem'],
+                                                                         self.BD_Etapas, self.FechaComienzo,
+                                                                         self.FechaTermino)
         # Unifica datos de demanda anteriores por etapa (pandas Dataframe)
         self.BD_DemProy = pd__concat([self.BD_DemTasaCrecEsp, self.BD_DemSistDesv.abs()], axis = 'columns')
         # Almacena la PE de cada año para cada hidrología (pandas Dataframe)
-        self.BD_Hidrologias_futuras = aux_smcfpl.Crea_hidrologias_futuras(self.DFs_Entradas['df_in_smcfpl_histhid'], self.BD_Etapas, self.PEHidSeca, self.PEHidMed, self.PEHidHum, self.FechaComienzo, self.FechaTermino)
+        self.BD_Hidrologias_futuras = aux_smcfpl.Crea_hidrologias_futuras( self.DFs_Entradas['df_in_smcfpl_histhid'],
+                                                                           self.BD_Etapas, self.PEHidSeca, self.PEHidMed,
+                                                                           self.PEHidHum, self.FechaComienzo, self.FechaTermino)
         # Respecto a la base de datos 'in_smcfpl_ParamHidEmb' en self.DFs_Entradas['df_in_smcfpl_ParamHidEmb'], ésta es dependiente de hidrologías solamente
         # Respecto a la base de datos 'in_smcfpl_seriesconf' en self.DFs_Entradas['df_in_smcfpl_seriesconf'], ésta define configuración hidráulica fija
         # Almacena la TSF por etapa de las tecnologías (pandas Dataframe)
-        self.BD_TSFProy = aux_smcfpl.TSF_Proyectada_a_Etapa(self.DFs_Entradas['df_in_smcfpl_tsfproy'], self.BD_Etapas, self.FechaComienzo)
+        self.BD_TSFProy = aux_smcfpl.TSF_Proyectada_a_Etapa( self.DFs_Entradas['df_in_smcfpl_tsfproy'],
+                                                             self.BD_Etapas, self.FechaComienzo)
         # Convierte los dataframe de mantenimientos a etapas dentro de un diccionario con su nombre como key
-        self.BD_MantEnEta = aux_smcfpl.Mantenimientos_a_etapas( self.DFs_Entradas['df_in_smcfpl_mantbarras'], self.DFs_Entradas['df_in_smcfpl_manttx'],
-                                                                self.DFs_Entradas['df_in_smcfpl_mantgen'], self.DFs_Entradas['df_in_smcfpl_mantcargas'],
+        self.BD_MantEnEta = aux_smcfpl.Mantenimientos_a_etapas( self.DFs_Entradas['df_in_smcfpl_mantbarras'],
+                                                                self.DFs_Entradas['df_in_smcfpl_manttx'],
+                                                                self.DFs_Entradas['df_in_smcfpl_mantgen'],
+                                                                self.DFs_Entradas['df_in_smcfpl_mantcargas'],
                                                                 self.BD_Etapas)
         # Por cada etapa crea el SEP correspondiente (...paralelizable...) (dict of pandaNetworks and extradata)
         self.BD_RedesXEtapa = Crea_SEPxEtapa( self.DFs_Entradas['df_in_smcfpl_tecbarras'], self.DFs_Entradas['df_in_smcfpl_teclineas'],
@@ -134,46 +145,15 @@ class Simulacion(object):
         # Obtiene partes del diccionario ExtraData por etapa
         self.TecGenSlack = [d['ExtraData']['TecGenSlack'] for d in self.BD_RedesXEtapa.values()]
         # Crea lista del Número de Cargas en cada Etapa/Grid
-        self.ListNumLoads = [d['ExtraData']['NumLoads'] for d in self.BD_RedesXEtapa.values()]
+        self.ListTypoCargasEta = [v['PandaPowerNet']['load'][['type']] for k, v in self.BD_RedesXEtapa.items()]
         # Crea lista del Número de Unidades de Generación en cada Etapa/Grid
         # self.ListNumGenNoSlack = [d['ExtraData']['NumGenNoSlack'] for d in self.BD_RedesXEtapa.values()]
         # Crea lista del tipos (Número de Unidades intrínseco) de Generación en cada Etapa/Grid
         self.ListTiposGenNoSlack = [d['ExtraData']['Tipos'] for d in self.BD_RedesXEtapa.values()]
+        # Obtiene Grillas de cada etapa en lista (0-indexed)
+        self.DictSEPBrutoXEtapa = {k: v['PandaPowerNet'] for k, v in self.BD_RedesXEtapa.items()}
 
         logger.debug("! inicialización clase Simulacion(...) (CreaElementos.py) Finalizada!")
-
-    def ImprimeBDs(self):
-        """
-            Imprime en el directorio temporal definido 'self.TempFolderName', las siguientes base de datos.
-        """
-        logger.info("Exportando a archivos temporales ...")
-        # Guarda una copia base de datos de etapas en los archivos
-        self.BD_Etapas.to_csv(self.TempFolderName + os__path__sep + 'BD_Etapas.csv')
-        # Guarda una copia base de datos de Parámetros de hidrologías de los embalses en los archivos
-        self.DFs_Entradas['df_in_smcfpl_ParamHidEmb'].to_csv(self.TempFolderName + os__path__sep + 'ParamHidEmb.csv')
-        # Guarda una copia base de datos de configuración hidráulica en los archivos
-        self.DFs_Entradas['df_in_smcfpl_seriesconf'].to_csv(self.TempFolderName + os__path__sep + 'seriesconf.csv')
-        # Guarda una copia base de datos de Proyección de la Demanda Sistema
-        self.BD_DemProy.to_csv(self.TempFolderName + os__path__sep + 'BD_DemProy.csv')
-        # Guarda una copia base de datos de la Probabilidad de Excedencia (PE) por etapa
-        self.BD_Hidrologias_futuras.to_csv(self.TempFolderName + os__path__sep + 'BD_Hidrologias_futuras.csv')
-        # Guarda una copia base de datos de la Tasa de Falla/Salida Forzada en el directorio temporal
-        self.BD_TSFProy.to_csv(self.TempFolderName + os__path__sep + 'BD_TSFProy.csv')
-
-        # Imprime las los archivos de Redes/Grids de cada etapa, para luego ser leídos por los nodos.
-        for EtaNum in self.BD_Etapas.index:
-            """ Por cada etapa imprime dos archivos, uno llamado '#.json' (donde # es el número de la etapa) con info extra de la etapa y, otro
-            llamado 'Grid_#.json' que contiene la red asociada a la etapa casi lista para simular lpf.
-            """
-            BD_RedesXEtapa_ExtraData = self.BD_RedesXEtapa[EtaNum]['ExtraData']
-
-            # Guarda Datos de etapa en archivo JSON
-            with open(self.TempFolderName + os__path__sep + "{}.json".format(EtaNum), 'w') as f:
-                json__dump(BD_RedesXEtapa_ExtraData, f)
-
-                # Exporta la red a archivo pickle. Necesario para exportar tipos de lineas. Más pesado que JSON y levemente más lento pero funcional... :c
-                pp__to_pickle( self.BD_RedesXEtapa[EtaNum]['PandaPowerNet'], self.TempFolderName + os__path__sep + "Grid_Eta{}.p".format(EtaNum) )
-        logger.info("Exportando completado.")
 
     def run(self, delete_TempData=True):
         logger.debug("Corriendo método Simulacion.run()...")
@@ -196,7 +176,7 @@ class Simulacion(object):
                 os__makedirs(self.TempFolderName)
 
             # Método de clase creado para imprimir BDs más importantes
-            self.ImprimeBDs()
+            smcfpl__in_out_files__ImprimeBDs(self)
 
             # Ejecuta el archivo que pone en cola de slurm el archivo 'NucleoCalculo' en los nodos, y resuelve cada
             # serie de etapas (caso) dada una hidrología y Dem-Gen. Información necesaria ya esta escrita en disco.
@@ -208,6 +188,9 @@ class Simulacion(object):
             #
             # COMPLETAR CUANDO FUNCIONE SLURM !!!
             #
+
+            # -- Llamar al Núcleo de cálculo mediante linea de comando
+            # Out = sp__run([sys__executable, 'NucleoCalculo.py', 'Humeda'], stdout=sp__PIPE).stdout.decode('utf-8')  # Retorna string  <---- DEBE SER SCRIPT EJECUTABLE argv POR LOS NODOS
 
         else:
             """
@@ -222,33 +205,39 @@ class Simulacion(object):
             for HidNom in ['Humeda', 'Media', 'Seca']:
                 # PEs por etapa asociadas a la Hidrología en cuestión
                 DF_PEsXEtapa = self.BD_Hidrologias_futuras[['PE ' + HidNom + ' dec']]
+                # Parámetros de cota-costo en hidrología actual. Indices: ['b', 'CVmin', 'CVmax', 'CotaMin', 'CotaMax']
+                DF_ParamHidEmb_hid = self.DFs_Entradas['df_in_smcfpl_ParamHidEmb'].loc[HidNom]  # Accede al DataFrame del DataFrame Multindex
+                DF_CotasEmbalsesXEtapa = pd__DataFrame(np__tile(DF_PEsXEtapa, (1, len(DF_ParamHidEmb_hid.columns))),
+                                                       columns=DF_ParamHidEmb_hid.columns,
+                                                       index=DF_PEsXEtapa.index)
+                # Obtiene las cotas Máximas y Mínimas de los embalses dada la hidrología actual
+                CotasMax = DF_ParamHidEmb_hid.loc['CotaMax'].values
+                CotasMin = DF_ParamHidEmb_hid.loc['CotaMin'].values
+                # Calcula el porcentaje lineal dado por la PE en cada etapa, desde CotaMin hasta CotaMax. De cada Embalse
+                DF_CotasEmbalsesXEtapa = (CotasMax - CotasMin) * (1 - DF_CotasEmbalsesXEtapa) + CotasMin
                 # Numero total Demandas: NumVecesDem
                 for NDem in range(self.NumVecesDem):
                     #
                     # Numero total Despachos: NumVecesGen
                     for NGen in range(self.NumVecesGen):
-                        PyGeneratorDemand_FreeCust = aux_smcfpl.GeneradorDemanda(Medias=self.BD_DemProy['TasaCliLib'].tolist(),
-                                                                                 Sigmas=self.BD_DemProy['Desv_decimal'].tolist(),
-                                                                                 NCargas=self.ListNumLoads)
-                        PyGeneratorDemand_RegCust = aux_smcfpl.GeneradorDemanda(Medias=self.BD_DemProy['TasaCliReg'].tolist(),
-                                                                                Sigmas=self.BD_DemProy['Desv_decimal'].tolist(),
-                                                                                NCargas=self.ListNumLoads)
+                        PyGeneratorDemand = aux_smcfpl.GeneradorDemanda(DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
+                                                                        DF_TasaCReg=self.BD_DemProy[['TasaCliReg']],  # pandas DataFrame
+                                                                        DF_DesvDec=self.BD_DemProy[['Desv_decimal']],  # pandas DataFrame
+                                                                        ListTypoCargasEta=self.ListTypoCargasEta)
                         PyGeneratorDispatched = aux_smcfpl.GeneradorDespacho(Lista_TiposGen=self.ListTiposGenNoSlack,  # lista
                                                                              DF_HistGenERNC=self.BD_HistGenRenovable,  # tupla de dos pandas DataFrame
                                                                              DF_TSF=self.BD_TSFProy,  # para cada tecnología que recurra con falla se asigna
                                                                              DF_PE_Hid=DF_PEsXEtapa,  # pandas DataFrame
                                                                              DesvEstDespCenEyS=self.DesvEstDespCenEyS,
                                                                              DesvEstDespCenP=self.DesvEstDespCenP)
-                        # Medias=,  # val histo (ERNC), pdf Uniforme (termo), o PE Hid (hidro)
-                        # Sigmas=,  # val histo (ERNC), pdf Uniforme (termo), o 10%|20% (hidro)
 
-                        # Corre directamente (Sin escribir archivos a disco) llama al archivo de resolución por caso o serie de etapas dada una hidrología y Dem-Gen
-                        # -- Llamar al Núcleo de cálculo mediante linea de comando
-                        # Out = sp__run([sys__executable, 'NucleoCalculo.py', 'Humeda'], stdout=sp__PIPE).stdout.decode('utf-8')  # Retorna string  <---- DEBE SER SCRIPT EJECUTABLE argv POR LOS NODOS
-                        # -- Llama al Núcleo de cálculo como python function. Ejecuta 'el caso' o 'serie de etapas' dadas la condiciones de entrada
-                        NucleoCalculo.Calcular(self.NEta, HidNom, PyGeneratorDemand_FreeCust, PyGeneratorDemand_RegCust, PyGeneratorDispatched,
-                                               self.DesvEstDespCenEyS, self.DesvEstDespCenP, self.DFs_Entradas['df_in_smcfpl_ParamHidEmb'],
-                                               self.DFs_Entradas['df_in_smcfpl_seriesconf'], self.BD_Etapas)
+                        # Corre directamente (Sin escribir archivos a disco) llama al archivo de resolución por caso o
+                        # serie de etapas dada una hidrología y Dem-Gen
+                        # -- Llama al Núcleo de cálculo como python function. Ejecuta 'el caso' o 'serie de etapas'
+                        # dadas la condiciones de entrada
+                        NucleoCalculo.Calcular(self.BD_Etapas.index, HidNom, PyGeneratorDemand, PyGeneratorDispatched,
+                                               DF_ParamHidEmb_hid, self.DFs_Entradas['df_in_smcfpl_seriesconf'],
+                                               self.DictSEPBrutoXEtapa)
                         break
                     break
                 break
@@ -576,6 +565,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTra
         9.- Única unidad de referencia existente debe ser ingresada como Red Externa (Requerimientos de PandaPower)
         10.- Elimina el generador de referencia del DataFrame de disponibles
         11.- Por cada Generador disponible crea el correspondiente elemento en la RED
+        12.- Elimina los elementos del sistema en caso de quedan sin aislados (Sin conexión a Gen Ref) producto de mantención
 
         Retorna una tupla con (PandaPower Grid filled, ExtraInfo)
     """
@@ -831,12 +821,10 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTra
         GenDisp.loc[GenRef, 'EsSlack'] = True
         msg = "Fijando Unidad: '{}' como referencia.".format(GenRef)
         logger.warning(msg)
-    else:
-        pass
 
     # 9.- Única unidad de referencia existente debe ser ingresada como Red Externa (Requerimientos de PandaPower)
     pdSerie_GenRef = GenDisp[GenDisp['EsSlack']].squeeze()  # convert single row pandas DataFrame to Series
-    IndBarraConn = Grid['bus'][ Grid['bus']['name'] == pdSerie_GenRef['NomBarConn'] ].index[0]
+    IndBarraConn = Grid['bus'][ Grid['bus']['name'] == pdSerie_GenRef['NomBarConn'] ].index[0]  # toma la primera coincidencia
     pp__create_ext_grid( Grid, bus=IndBarraConn, vm_pu=1.0, va_degree=0.0, name=pdSerie_GenRef.name,
                          max_p_kw=pdSerie_GenRef['PmaxMW'] * 1e3, min_p_kw=pdSerie_GenRef['PminMW'] * 1e3 )
     # 10.- Elimina el generador de referencia del DataFrame de disponibles
@@ -847,9 +835,18 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTra
         IndBarraConn = Grid['bus'][ Grid['bus']['name'] == Generador['NomBarConn'] ].index[0]
         # Notar que se le asigna la potencia nominal a la carga. Ésta es posteriormente modificada según los parámetros de la etapa en cada proceso
         pp__create_gen(Grid, bus=IndBarraConn, name=GenNom, p_kw=-Generador['PmaxMW'] * 1e3,
-                       min_p_kw=Generador['PminMW'] * 1e3, type=Generador['GenTec'])  # p_kw es negativo para generación
+                       min_p_kw=-Generador['PminMW'] * 1e3, type=Generador['GenTec'])  # p_kw es negativo para generación
 
-    # 12.- Actualiza el diccionario ExtraData con información adicional
+    # 12.- Elimina los elementos del sistema en caso de quedan sin aislados (Sin conexión a Gen Ref) producto de mantención
+    #      Notar que pueden definirse múltiples Generadores de referencia, los cuales podrán quedar separados eléctricamente.
+    SetBarrasAisladas = pp__topology__unsupplied_buses(Grid)
+    if bool(SetBarrasAisladas):
+        logger.warn("Existen sistema aislado sin conexión con Gen Ref. Eliminándolo...")
+        # Notar como los sistemas quedan separados cuando existe más de una Barra de Referencia,
+        # dada por el generador de referencia (angV = 0). No da Warning cuando ésto ocurre.
+        pp__drop_inactive_elements(Grid)  # Incluye logger Info level. From pandapower
+
+    # 13.- Actualiza el diccionario ExtraData con información adicional
     ExtraData['CVarGenRef'] = float(pdSerie_GenRef['CVar'])  # costo variable unidad de referencia (Red Externa)
     ExtraData['TecGenSlack'] = str(pdSerie_GenRef['GenTec'])  # Nombre de la tecnología del generador de referencia
     ExtraData['NumLoads'] = Grid['load'].shape[0]  # Número de cargas existentes por etapa
