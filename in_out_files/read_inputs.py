@@ -13,7 +13,7 @@ import smcfpl.aux_funcs as aux_smcfpl
 
 aux_smcfpl.print_full_df()
 logging.basicConfig(level=logging.DEBUG,
-                    format="[%(levelname)s][%(asctime)s] - %(message)s")
+                    format="[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s")
 logger = logging.getLogger()
 
 
