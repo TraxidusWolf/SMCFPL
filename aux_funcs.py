@@ -1,4 +1,7 @@
 from datetime import timedelta as dt__timedelta
+from pandapower import overloaded_lines as pp__overloaded_lines
+from pandapower.topology import create_nxgraph as pp__create_nxgraph
+from networkx import has_path as nx__has_path
 from pandas import DataFrame as pd__DataFrame, date_range as pd__date_range, Series as pd__Series
 from pandas import datetime as pd__datetime, set_option as pd__set_option
 from pandas import concat as pd__concat, Timedelta as pd__Timedelta
@@ -117,11 +120,12 @@ def DesvDemandaHistoricaSistema_a_Etapa(BD_Historica, BD_Etapas):
                                              MesInicio=MesInicio, DiaInicio=DiaInicio, HoraInicio=HoraInicio,
                                              MesFin=MesFin, DiaFin=DiaFin, HoraFin=HoraFin)
         # Calcular desviación mean(programado - real / real?)
-        Desv_dec = np__mean( (Desv_dec['programado'] - Desv_dec['real']) / Desv_dec['programado'])   # Notar es muy difícil que demanda sistema programada sea cero.
+        # Notar es muy difícil que demanda sistema programada sea cero.
+        Desv_dec = np__mean( (Desv_dec['programado'] - Desv_dec['real']) / Desv_dec['programado'])
         # print("Desv_dec:", Desv_dec)
 
         # Asigna valores al DataFrame de salida
-        DF_Salida.loc[ Num, ['EtaNum', 'Desv_decimal'] ] = [Num, Desv_dec]
+        DF_Salida.loc[ Num, ['EtaNum', 'Desv_decimal'] ] = [Num, abs(Desv_dec)]  # asegura scale/desv. est. positivo
     logger.debug("! para cada etapa sale de función: 'Filtra_DataFrame_Agrupado' (aux_funcs.py) ...")
 
     logger.debug("! saliendo en función: 'DesvDemandaHistoricaSistema_a_Etapa' (aux_funcs.py) ...")
@@ -573,33 +577,42 @@ def GenHistorica_a_Etapa(DF_Etapas, DF_histsolar, DF_histeolicas):
     return (DF_Salida_Solar, DF_Salida_Eolico)
 
 
-def GeneradorDemanda(DF_TasaCLib = pd__DataFrame(), DF_TasaCReg = pd__DataFrame(), DF_DesvDec = pd__DataFrame(), ListTypoCargasEta = [[]]):
+def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_TasaCReg = pd__DataFrame(),
+                      DF_DesvDec = pd__DataFrame(), DictTypoCargasEta = {}):
     """
-        Genera un iterador de valor p.u. de las demandas en cada carga (Ésta debe ser multiplicada por el valor inicial nominal de la carga al momento
-        de implementarse). El iterador crea un arreglo por cada etapa para cada carga (largo variable), por lo que cada vez que se itere se generan
-        los valores en cada etapa, con valores de tasa y desviación absolutos (asegura signo positivo).
+        Genera un iterador de valor p.u. de las demandas en cada carga (Ésta
+        debe ser multiplicada por el valor inicial nominal de la carga al
+        momento de implementarse). El iterador crea un arreglo por cada etapa
+        para cada carga (largo variable), por lo que cada vez que se itere se
+        generan los valores en cada etapa, con valores de tasa y desviación
+        absolutos (asegura signo positivo).
 
-        Notar que se debe obtener previamente el número de cargas en cada etapa, en este caso
-        está implícito en ListTypoCargasEta para cada etapa (en indices).
+        Notar que se debe obtener previamente el número de cargas en cada
+        etapa, en este caso está implícito en DictTypoCargasEta para cada
+        etapa (en indices).
 
-        Lo que se busca finalmente, y después de esta función, es obtienes una
-        demanda para cada carga que sea variable según la pdf normal. Notar que
-        aquí se varía la tasa de crecimiento en lugar de la demanda bruta. Variar
-        esta última produce el mismo efecto que variar directamente la tasa ya que
-        la desviación estándar esta normalizada.
+        Lo que se busca finalmente, y después de esta función, es obtienes
+        una demanda para cada carga que sea variable según la pdf normal.
+        Notar que aquí se varía la tasa de crecimiento en lugar de la
+        demanda bruta. Variar esta última produce el mismo efecto que
+        variar directamente la tasa ya que la desviación estándar esta
+        normalizada.
 
         :param DF_TasaCLib: DataFrame con valores promedio de la tasa de crecimiento de Clientes
                        Libres. Posee indices de etapas.
         :type DF_TasaCLib: pandas DataFrame.
+
         :param DF_TasaCReg: DataFrame con valores promedio de la tasa de crecimiento de Clientes
                        Regulados. Posee indices de etapas.
         :type DF_TasaCReg: pandas DataFrame.
+
         :param DF_DesvDec: DataFrame con valores de desviación estándar en la predicción de la
                        demanda, que es utilizada para la distribución de los clientes Libres y
                        Regulados. Posee indices de etapas.
         :type DF_DesvDec: pandas DataFrame.
-        :param ListTypoCargasEta: Tipo de las cargas ('L' o 'R') que posee la Grilla en cada etapa.
-        :type ListTypoCargasEta: Lista (0-indexed) de pandas DataFrame.
+
+        :param DictTypoCargasEta: Tipo de las cargas ('L' o 'R') que posee la Grilla en cada etapa.
+        :type DictTypoCargasEta: Diccionario {EtaNum: pandas DataFrame}
 
         Cada vez que se llama retorna una tupla con: (EtaNum, pandas DataFrame)
 
@@ -615,36 +628,36 @@ def GeneradorDemanda(DF_TasaCLib = pd__DataFrame(), DF_TasaCReg = pd__DataFrame(
                 2.5.- Retorna la tupla (EtaNum 1-indexed, pandas DataFrame)
     """
     # Verifica que el largo de Etapas sean coincidentes, de lo contrario retorna ValueError
-    if DF_TasaCLib.shape[0] != DF_TasaCReg.shape[0] != DF_DesvDec.shape[0] != len(ListTypoCargasEta):
-        msg = "El numero de etapas en DF_TasaCLib, DF_TasaCReg y DF_DesvDec son diferentes del tamaño de ListTypoCargasEta."
+    if DF_TasaCLib.shape[0] != DF_TasaCReg.shape[0] != DF_DesvDec.shape[0] != len(DictTypoCargasEta):
+        msg = "El numero de etapas en DF_TasaCLib, DF_TasaCReg y DF_DesvDec son diferentes del tamaño de DictTypoCargasEta."
         logger.error(msg)
         raise ValueError(msg)
 
-    NEta = DF_TasaCLib.shape[0]  # puede tomarse cualquier otro largo
-    for EtaNum in range(NEta):
-        DF_Salida = pd__DataFrame( index=ListTypoCargasEta[EtaNum].index,
+    for EtaNum in StageIndexesList:
+        DF_Salida = pd__DataFrame( index=DictTypoCargasEta[EtaNum].index,
                                    columns=['PDem_pu'])
         # Obtiene los indices de las cargas en la etapa actual que sean Clientes Libres
-        IndCLib = ListTypoCargasEta[EtaNum][ ListTypoCargasEta[EtaNum]['type'] == 'L' ].index
+        IndCLib = DictTypoCargasEta[EtaNum][ DictTypoCargasEta[EtaNum]['type'] == 'L' ].index
         # Obtiene los indices de las cargas en la etapa actual que sean Clientes Regulados
-        IndCReg = ListTypoCargasEta[EtaNum][ ListTypoCargasEta[EtaNum]['type'] == 'R' ].index
+        IndCReg = DictTypoCargasEta[EtaNum][ DictTypoCargasEta[EtaNum]['type'] == 'R' ].index
 
         #
         # Nueva tasa de los Clientes Libres
-        dataCLib = np__random__normal( loc=float(DF_TasaCLib.loc[EtaNum + 1, :]),
-                                       scale=float(DF_DesvDec.loc[EtaNum + 1, :]),
+        dataCLib = np__random__normal( loc=float(DF_TasaCLib.loc[EtaNum, :]),
+                                       scale=float(DF_DesvDec.loc[EtaNum, :]),
                                        size=len(IndCLib))
         # Nueva tasa de los Clientes Regulados
-        dataCReg = np__random__normal( loc=float(DF_TasaCReg.loc[EtaNum + 1, :]),
-                                       scale=float(DF_DesvDec.loc[EtaNum + 1, :]),
+        dataCReg = np__random__normal( loc=float(DF_TasaCReg.loc[EtaNum, :]),
+                                       scale=float(DF_DesvDec.loc[EtaNum, :]),
                                        size=len(IndCReg))
         # Asigna los datos Regulados y Libres al pandas DataFrame de salida
-        DF_Salida.loc[IndCLib, 'PDem_pu'] = abs(dataCLib)  # asegura que la demanda demande potencia y no la genere
-        DF_Salida.loc[IndCReg, 'PDem_pu'] = abs(dataCReg)  # asegura que la demanda demande potencia y no la genere
-        yield ( EtaNum + 1,  DF_Salida)
+        DF_Salida.loc[IndCLib, 'PDem_pu'] = dataCLib  # demanda en [p.u.] ya que salen de valores decimales en la etapa y pueden ser cualquier valor
+        DF_Salida.loc[IndCReg, 'PDem_pu'] = dataCReg  # demanda en [p.u.] ya que salen de valores decimales en la etapa y pueden ser cualquier valor
+        yield ( EtaNum,  DF_Salida)
 
 
-def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = None, DF_PE_Hid = None, DesvEstDespCenEyS=1, DesvEstDespCenP=1):
+def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC = None,
+                       DF_TSF = None, DF_PE_Hid = None, DesvEstDespCenEyS=1, DesvEstDespCenP=1):
     """
         Genera un iterador de valores p.u. de las potencias de despacho en cada unidad de generación de las distintas tecnologías. Estos valores
         deben ser multiplicados por el valor nominal de potencia de generación de la unidad y limitados entre pmin y pmax). El iterador crea un
@@ -652,7 +665,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
 
         Notar que se debe obtener previamente el número de cargas en cada etapa. Los parámetros ingresados deben tener largo del número de etapas.
 
-        Lista_TiposGen  # lista por etapa de lo tipos de generación en DataFrame (numero gen en Grid)
+        Dict_TiposGen  # Diccionario por etapa de lo tipos de generación en DataFrame (numero gen en Grid)
         DF_HistGenERNC  # tupla de dos pandas DataFrame (DF_Solar, DF_Eólico)
         Lista_TecGenSlack  # lista
         DF_TSF  # pandas DataFrame, para cada tecnología que recurra con falla se asigna
@@ -675,25 +688,23 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
 
     """
     # Corrobora que el largo de los parámetros de entrada (teóricamente el Número de etapas), sea igual. De lo contrario retorna ValueError
-    if len(Lista_TiposGen) != DF_HistGenERNC[0].shape[0] != DF_HistGenERNC[1].shape[0] != DF_TSF.shape[0] != DF_PE_Hid.shape[0]:
+    if len(Dict_TiposGen) != DF_HistGenERNC[0].shape[0] != DF_HistGenERNC[1].shape[0] != DF_TSF.shape[0] != DF_PE_Hid.shape[0]:
         msg = "El numero de etapa en los parámetros de entrada no coinciden."
         logger.error(msg)
         raise ValueError(msg)
 
-    # Obtiene el número de etapas
-    NEta = len(Lista_TiposGen)
     # para cada siguiente iteración de la función generadora, retorna una tupla de (EtaNum, DF_Pot_despchada_indiceGrid)
-    for EtaNum in range(NEta):
+    for EtaNum in StageIndexesList:
         # Número de generadores
-        # NGen = Lista_TiposGen[EtaNum].shape[0]
+        # NGen = Dict_TiposGen[EtaNum].shape[0]
         # Inicializa DataFrame (nueva columna vacía) para potencias despachadas
-        DF_IndGen_PDispatched = pd__concat([ Lista_TiposGen[EtaNum], pd__DataFrame(columns=['PGen_pu']) ], axis='columns')
+        DF_IndGen_PDispatched = pd__concat([ Dict_TiposGen[EtaNum], pd__DataFrame(columns=['PGen_pu']) ], axis='columns')
 
         #
         # NUMERO DE TIPOS DE CENTRALES
         #
         # Obtiene nombres de los tipos ERNC (solar [0] y eólico [1])
-        NombresERNCTipo = [GenTecNom[0] for RowNum, GenTecNom in Lista_TiposGen[EtaNum].iterrows() if ('EólicaZ' in GenTecNom[0]) | ('Solar' in GenTecNom[0])]
+        NombresERNCTipo = [GenTecNom[0] for RowNum, GenTecNom in Dict_TiposGen[EtaNum].iterrows() if ('EólicaZ' in GenTecNom[0]) | ('Solar' in GenTecNom[0])]
         # Calcula los indice de centrales de Embalse en la Grilla
         IndGenEmb = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Embalse' ].index.values
         # Calcula los indice de centrales de Serie en la Grilla
@@ -715,17 +726,17 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
         # Por cada nombre ERNC se obtiene e valor aleatorio, según sus medias y desviaciones estándar
         for NomERNC in NombresERNCTipo:
             if 'Solar' in NomERNC:
-                Power_pu = np__random__normal( loc=float(DF_HistGenERNC[0].loc[EtaNum + 1, NomERNC + '_mean']),
-                                               scale=float(DF_HistGenERNC[0].loc[EtaNum + 1, NomERNC + '_std']))
+                Power_pu = np__random__normal( loc=float(DF_HistGenERNC[0].loc[EtaNum, NomERNC + '_mean']),
+                                               scale=float(DF_HistGenERNC[0].loc[EtaNum, NomERNC + '_std']))
                 # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-                TasaFalla = DF_TSF[NomERNC][EtaNum + 1]
+                TasaFalla = DF_TSF[NomERNC][EtaNum]
                 # La Tasa controla la probabilidad de falla
                 Power_pu *= np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla])
             elif 'EólicaZ' in NomERNC:
-                Power_pu = np__random__normal( loc=float(DF_HistGenERNC[1].loc[EtaNum + 1, NomERNC + '_mean']),
-                                               scale=float(DF_HistGenERNC[1].loc[EtaNum + 1, NomERNC + '_std']))
+                Power_pu = np__random__normal( loc=float(DF_HistGenERNC[1].loc[EtaNum, NomERNC + '_mean']),
+                                               scale=float(DF_HistGenERNC[1].loc[EtaNum, NomERNC + '_std']))
                 # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-                TasaFalla = DF_TSF[NomERNC][EtaNum + 1]
+                TasaFalla = DF_TSF[NomERNC][EtaNum]
                 # La Tasa controla la probabilidad de falla
                 Power_pu *= np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla])
             else:
@@ -739,11 +750,11 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
         # Para las tecnologías hidráulicas asigna promedio según PE y desv según parámetros 'DesvEstDespCenEyS' y 'DesvEstDespCenP'
         if len(IndGenEmb):  # EMBALSE
             # valor de pdf gaussiana/normal
-            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum + 1, DF_PE_Hid.columns[0]],
+            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
                                            scale=DesvEstDespCenEyS,
                                            size=IndGenEmb.shape[0] )  # arrays
             # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Embalse'][EtaNum + 1]
+            TasaFalla = DF_TSF['Embalse'][EtaNum]
             # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
             ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenEmb.shape[0])
             Power_pu *= ModifyPower_Array
@@ -755,11 +766,11 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
 
         if len(IndGenSerie):  # SERIE
             # valor de pdf gaussiana/normal
-            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum + 1, DF_PE_Hid.columns[0]],
+            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
                                            scale=DesvEstDespCenEyS,
                                            size=IndGenSerie.shape[0] )  # arrays
             # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Serie'][EtaNum + 1]
+            TasaFalla = DF_TSF['Serie'][EtaNum]
             # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
             ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenSerie.shape[0])
             Power_pu *= ModifyPower_Array
@@ -771,11 +782,11 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
 
         if len(IndGenPasada):    # PASADA
             # valor de pdf gaussiana/normal
-            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum + 1, DF_PE_Hid.columns[0]],
+            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
                                            scale=DesvEstDespCenP,
                                            size=IndGenPasada.shape[0] )  # arrays
             # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Pasada'][EtaNum + 1]
+            TasaFalla = DF_TSF['Pasada'][EtaNum]
             # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
             ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenPasada.shape[0])
             Power_pu *= ModifyPower_Array
@@ -791,7 +802,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
                                            high=1.0,
                                            size=IndGenTermoCarbon.shape[0] )  # arrays
             # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Carbón'][EtaNum + 1]
+            TasaFalla = DF_TSF['Carbón'][EtaNum]
             # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
             ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenTermoCarbon.shape[0])
             Power_pu *= ModifyPower_Array
@@ -807,7 +818,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
                                            high=1.0,
                                            size=IndGenTermoGasDie.shape[0] )  # arrays
             # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Gas-Diésel'][EtaNum + 1]
+            TasaFalla = DF_TSF['Gas-Diésel'][EtaNum]
             # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
             ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenTermoGasDie.shape[0])
             Power_pu *= ModifyPower_Array
@@ -823,7 +834,7 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
                                            high=1.0,
                                            size=IndGenTermoOtras.shape[0] )  # arrays
             # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Otras'][EtaNum + 1]
+            TasaFalla = DF_TSF['Otras'][EtaNum]
             # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
             ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenTermoOtras.shape[0])
             Power_pu *= ModifyPower_Array
@@ -833,5 +844,93 @@ def GeneradorDespacho(Lista_TiposGen = None, DF_HistGenERNC = None, DF_TSF = Non
             # Asigna despacho al DataFrame
             DF_IndGen_PDispatched.loc[ IndGenTermoOtras, 'PGen_pu'] = Power_pu
 
-        yield (EtaNum + 1, DF_IndGen_PDispatched)
+        yield (EtaNum, DF_IndGen_PDispatched)
     pass
+
+
+def overloaded_trafo2w(Grid, max_load=100):
+    """
+        Same as pandapower.overloaded_lines, but for two winding transformers
+    """
+    if Grid['res_trafo'].empty:
+        return None
+    else:
+        return Grid['res_trafo'][ Grid['res_trafo']['loading_percent'] > max_load ].index
+
+
+def overloaded_trafo3w(Grid, max_load=100):
+    """
+        Same as pandapower.overloaded_lines, but for three winding transformers
+    """
+    if Grid['res_trafo3w'].empty:
+        return None
+    else:
+        return Grid['res_trafo3w'][ Grid['res_trafo3w']['loading_percent'] > max_load ].index
+
+
+def rutina_TipoCong(Grid, max_load=100):
+    #
+    # Verifica si existen congestiones (sobre 100% de carga), obtiene
+    # los indices de cada DataFrame
+    Saturated_lines = pp__overloaded_lines(Grid, max_load=max_load)
+    Saturated_trafo2w = overloaded_trafo2w(Grid, max_load=max_load)
+    Saturated_trafo3w = overloaded_trafo3w(Grid, max_load=max_load)
+
+    #
+    # Inicializa Listas de Congestiones tipo Inter e Intra
+    InterCongestion = []
+    IntraCongestion = []
+
+    # Inicializa diccionario de grupo de elementos congestionados
+    Dict_GroupElmnts = {'line': Saturated_lines, 'trafo': Saturated_trafo2w, 'trafo3w': Saturated_trafo3w}
+    # Para cada congestión encontrada Identifica el tipo (Inter - Intra)
+    for TypeElmnt, GroupElmnts in Dict_GroupElmnts.items():
+        if GroupElmnts is None:
+            # En caso de GroupElmnts ser None (No existen congestiones de este tipo),
+            # se continúa con siguiente grupo, de lo contrario se revisa tipo cong
+            continue
+        for CongBrnch in GroupElmnts:
+            # crea un grafo a partir de la Grilla
+            Graph = pp__create_nxgraph( Grid, respect_switches=True, include_lines=True,
+                                        include_trafos=True, include_impedances=False,
+                                        nogobuses=None, notravbuses=None,
+                                        # nogobuses=None, notravbuses=[CongBrnch],
+                                        multi=True, calc_r_ohm=False, calc_z_ohm=False)
+            # Obtiene números de nodos que conecta 'CongBrnch' (Da igual dirección)
+            if TypeElmnt == 'line':
+                Ind_NIni = Grid[TypeElmnt]['from_bus'][CongBrnch]
+                Ind_NFin = Grid[TypeElmnt]['to_bus'][CongBrnch]
+                # Elimina el Edge del grafo
+                Graph.remove_edge(Ind_NIni, Ind_NFin)
+                # Determina si aún sin el elemento existe conexión
+                IsIntra = nx__has_path(Graph, Ind_NIni, Ind_NFin)
+            elif TypeElmnt == 'trafo':
+                Ind_NIni = Grid[TypeElmnt]['hv_bus'][CongBrnch]
+                Ind_NFin = Grid[TypeElmnt]['lv_bus'][CongBrnch]
+                # Elimina el Edge del grafo
+                Graph.remove_edge(Ind_NIni, Ind_NFin)
+                # Determina si aún sin el elemento existe conexión
+                IsIntra = nx__has_path(Graph, Ind_NIni, Ind_NFin)
+            elif TypeElmnt == 'trafo3w':  # convierte a conexión delta
+                Ind_N_hv = Grid[TypeElmnt]['hv_bus'][CongBrnch]
+                Ind_N_mv = Grid[TypeElmnt]['mv_bus'][CongBrnch]
+                Ind_N_lv = Grid[TypeElmnt]['lv_bus'][CongBrnch]
+                # Elimina los Edges del grafo
+                Graph.remove_edge(Ind_N_hv, Ind_N_mv)
+                Graph.remove_edge(Ind_N_mv, Ind_N_lv)
+                Graph.remove_edge(Ind_N_hv, Ind_N_lv)
+                # Determina si aún sin el elemento existe conexión
+                IsIntra = nx__has_path(Graph, Ind_N_hv, Ind_N_mv)
+                IsIntra |= nx__has_path(Graph, Ind_N_mv, Ind_N_lv)
+                IsIntra |= nx__has_path(Graph, Ind_N_lv, Ind_N_hv)
+            else:
+                pass
+
+            # Formato lista congestiones: (ElmntType, Ind_Grid_Table)
+            if IsIntra:
+                # aún sin el elemento existe camino
+                IntraCongestion.append( (TypeElmnt, CongBrnch) )
+            else:
+                # elemento separa el SEP
+                InterCongestion.append( (TypeElmnt, CongBrnch) )
+    return (InterCongestion, IntraCongestion)

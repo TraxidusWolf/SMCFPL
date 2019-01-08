@@ -17,8 +17,9 @@ logger = logging.getLogger()
 
 
 def Send( NNodos=1, WTime=dt__timedelta(days=0, hours=0, minutes=5, seconds=0), NTasks=1,
-          CPUxTask=1, SMCFPL_dir=os__getcwd(), TempData_dir=os__getcwd(), DirsUsar=[],
-          NumTrbjsHastaAhora=1, NTotalCasos=1, StageIndexesList=[], NumParallelCPU=False ):
+          ntasks_per_node=1, CPUxTask=1, SMCFPL_dir=os__getcwd(), TempData_dir=os__getcwd(),
+          DirsUsar=[], NumTrbjsHastaAhora=1, NTotalCasos=1, StageIndexesList=[],
+          NumParallelCPU=False, MaxItCongInter=1, MaxItCongIntra=1 ):
     """
         Por cada llamada a esta función se ejecuta la linea de comando que llama al archivo
         'NucleoCalculo.py' de la biblioteca SMCFPL de python 3.6. a ejecutarse en los Nodos.
@@ -56,28 +57,39 @@ def Send( NNodos=1, WTime=dt__timedelta(days=0, hours=0, minutes=5, seconds=0), 
         Argument1 = str(ContadorCasos)
         # Hidrology
         Argument2 = '"' + Hydrology + '"'
+        # Grillas
+        Argument3 = "{{StageNum: from_pickle('{0}'+'{1}'+'Grid_Eta{{}}.p'.format(StageNum)) for StageNum in {2} }}".format(
+            TempData_dir + os__sep + FolderName,
+            os__sep,
+            StageIndexesList)  # Double curly brackets for scape them
         # StageIndexesList
-        Argument3 = str(StageIndexesList)
+        Argument4 = str(StageIndexesList)
         # DF_ParamHidEmb_hid
-        Argument4 = """read_csv("{}ParamHidEmb.csv", index_col=[0,1]).loc["{}", :]""".format(
+        Argument5 = """read_csv("{}ParamHidEmb.csv", index_col=[0,1]).loc["{}", :]""".format(
             TempData_dir + os__sep,
             Hydrology)
         # DF_seriesconf
-        Argument5 = """read_csv("{}seriesconf.csv", index_col=[0])""".format(
+        Argument6 = """read_csv("{}seriesconf.csv", index_col=[0])""".format(
             TempData_dir + os__sep)
+        # MaxItCongInter
+        Argument7 = MaxItCongInter
+        # MaxItCongIntra
+        Argument8 = MaxItCongIntra
         # File_Caso
-        Argument6 = '"' + TempData_dir + os__sep + FolderName + '"'
+        Argument9 = '"' + TempData_dir + os__sep + FolderName + '"'
         # in_node
-        Argument7 = 'True'
-        Arguments = "{},{},{},{},{},{},{}".format(Argument1, Argument2, Argument3,
-                                                  Argument4, Argument5, Argument6,
-                                                  Argument7)
+        Argument10 = 'True'
+        Arguments = "{},{},{},{},{},{},{},{},{},{}".format(Argument1, Argument2, Argument3,
+                                                           Argument4, Argument5, Argument6,
+                                                           Argument7, Argument8, Argument9,
+                                                           Argument10)
         # -- --
 
         # Complementa comando sbatch
         sbatch_cmd += ["-D", "{OsSep}data{OsSep}{cwd}".format(OsSep=os__sep, cwd=TempData_dir)]
         sbatch_cmd += ["-N", "{NNodos}".format(NNodos=NNodos)]
         sbatch_cmd += ["-n", "{ntasks}".format(ntasks=NTasks)]
+        sbatch_cmd += ["---ntasks-per-node", "{ntasks_per_node}".format(ntasks_per_node=ntasks_per_node)]
         sbatch_cmd += ["-c", "{cpu_per_task}".format(cpu_per_task=CPUxTask)]
         sbatch_cmd += ["-o", "outFile_{file_name}-{FileNum}_JId".format(file_name='NucleoCalculo', FileNum=ContadorCasos)]
         sbatch_cmd += ["-e", "errFile_{file_name}-{FileNum}_JId".format(file_name='NucleoCalculo', FileNum=ContadorCasos)]

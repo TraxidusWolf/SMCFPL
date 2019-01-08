@@ -40,7 +40,7 @@ class Simulacion(object):
         paralelismo se aumentarán los requerimientos de memoria según la cantidad de tareas.
     """
 
-    def __init__(self, InFilePath='.', OutFilePath='.', Sbase_MVA=100, MaxItCongInter=1, MaxItCongIntra=1,
+    def __init__(self, XLSX_FileName='', InFilePath='.', OutFilePath='.', Sbase_MVA=100, MaxItCongInter=1, MaxItCongIntra=1,
                  FechaComienzo='2018-01-01 00:00', FechaTermino='2019-01-31 23:59', NumVecesDem=1,
                  NumVecesGen=1, PerdCoseno=True, PEHidSeca=0.8, PEHidMed=0.5, PEHidHum=0.2, DesvEstDespCenEyS=0.1,
                  DesvEstDespCenP=0.2, NumParallelCPU=False, UsaSlurm=False, Working_dir=os__getcwd(),
@@ -91,25 +91,23 @@ class Simulacion(object):
         self.TempFolderName = TempFolderName
         self.abs_path_temp = os__path__abspath(Working_dir + os__sep + TempFolderName)
         self.abs_path_smcfpl = os__path__abspath(smcfpl_dir)
+        self.DirSalidas = os__path__abspath(OutFilePath)
+        self.abs_InFilePath = os__path__abspath(InFilePath)
+        self.abs_OutFilePath = os__path__abspath(OutFilePath)
 
-        #
-        # Atributos extra
-        # self.ModulePath = os__path__dirname(os__path__abspath(__file__))
-
-        FileName = self.InFilePath.split(os__sep)[-1]
-        PathInput = self.InFilePath.split(os__sep)[:-1]
-        # lee archivos de entrada
-        self.DFs_Entradas = smcfpl__in_out_files__read_sheets_to_dataframes(os__sep.join(PathInput), FileName, NumParallelCPU)
+        FileName = XLSX_FileName
+        # lee archivos de entrada (dict of dataframes)
+        self.DFs_Entradas = smcfpl__in_out_files__read_sheets_to_dataframes(self.abs_InFilePath, FileName, NumParallelCPU)
         # Determina duración de las etapas  (1-indexed)
-        self.BD_Etapas = Crea_Etapas(self.DFs_Entradas['df_in_smcfpl_mantbarras'],
-                                     self.DFs_Entradas['df_in_smcfpl_manttx'],
-                                     self.DFs_Entradas['df_in_smcfpl_mantgen'],
-                                     self.DFs_Entradas['df_in_smcfpl_mantcargas'],
-                                     self.DFs_Entradas['df_in_smcfpl_histsolar'],
-                                     self.DFs_Entradas['df_in_smcfpl_histeolicas'],
-                                     self.FechaComienzo,
-                                     self.FechaTermino)
-        # print('self.BD_Etapas:', self.BD_Etapas)
+        self.BD_Etapas = Crea_Etapas( self.DFs_Entradas['df_in_smcfpl_mantbarras'],
+                                      self.DFs_Entradas['df_in_smcfpl_manttx'],
+                                      self.DFs_Entradas['df_in_smcfpl_mantgen'],
+                                      self.DFs_Entradas['df_in_smcfpl_mantcargas'],
+                                      self.DFs_Entradas['df_in_smcfpl_histsolar'],
+                                      self.DFs_Entradas['df_in_smcfpl_histeolicas'],
+                                      self.FechaComienzo,
+                                      self.FechaTermino)
+        print('self.BD_Etapas:', self.BD_Etapas)
         # Numero total de etapas
         self.NEta = self.BD_Etapas.shape[0]
         #
@@ -155,11 +153,11 @@ class Simulacion(object):
         # Obtiene partes del diccionario ExtraData por etapa
         self.TecGenSlack = [d['ExtraData']['TecGenSlack'] for d in self.BD_RedesXEtapa.values()]
         # Crea lista del Número de Cargas en cada Etapa/Grid
-        self.ListTypoCargasEta = [v['PandaPowerNet']['load'][['type']] for k, v in self.BD_RedesXEtapa.items()]
+        self.DictTypoCargasEta = { k: v['PandaPowerNet']['load'][['type']] for k, v in self.BD_RedesXEtapa.items() }
         # Crea lista del Número de Unidades de Generación en cada Etapa/Grid
         # self.ListNumGenNoSlack = [d['ExtraData']['NumGenNoSlack'] for d in self.BD_RedesXEtapa.values()]
         # Crea lista del tipos (Número de Unidades intrínseco) de Generación en cada Etapa/Grid
-        self.ListTiposGenNoSlack = [d['ExtraData']['Tipos'] for d in self.BD_RedesXEtapa.values()]
+        self.DictTiposGenNoSlack = { k: d['ExtraData']['Tipos'] for k, d in self.BD_RedesXEtapa.items() }
         # # Obtiene Grillas de cada etapa en diccionario (1-indexed)
         # self.DictSEPBrutoXEtapa = {k: v['PandaPowerNet'] for k, v in self.BD_RedesXEtapa.items()}
 
@@ -194,21 +192,29 @@ class Simulacion(object):
             """
 
             # Se hace la suposición que de existir, contiene toda la información necesaria
-            if os__path__exists(self.abs_path_temp) and self.UsaSlurm['borrar_cache_pre']:
+            # if os__path__exists(self.abs_path_temp) and self.UsaSlurm['borrar_cache_pre']:
+            #     # Si existe un directorio con el nombre del correspondiente temporal,
+            #     # se elimina con warning. Se asegura que no existan conflictos con datos antiguos
+            #     logger.warn("Eliminando directorio completo {}".format(self.TempFolderName))
+            #     shutil__rmtree(self.abs_path_temp)
+            #     # Crea el directorio temporal
+            #     os__makedirs(self.abs_path_temp)
+            # elif not os__path__exists(self.abs_path_temp):
+            #     # verifica que exista directorio, de lo contrario lo crea.
+            #     os__makedirs(self.abs_path_temp)
+            if os__path__exists(self.abs_path_temp):
                 # Si existe un directorio con el nombre del correspondiente temporal,
                 # se elimina con warning. Se asegura que no existan conflictos con datos antiguos
-                logger.warn("Eliminando directorio completo {}".format(self.TempFolderName))
-                shutil__rmtree(self.abs_path_temp)
-                # Crea el directorio temporal
-                os__makedirs(self.abs_path_temp)
-            elif not os__path__exists(self.TempFolderName):
+                if self.UsaSlurm['borrar_cache_pre']:
+                    logger.warn("Eliminando directorio completo {}".format(self.TempFolderName))
+                    shutil__rmtree(self.abs_path_temp)
+                    # Crea el directorio temporal
+                    os__makedirs(self.abs_path_temp)
+            else:
                 # verifica que exista directorio, de lo contrario lo crea.
-                os__makedirs(self.TempFolderName)
+                os__makedirs(self.abs_path_temp)
 
-            # self.abs_path_ResNodos = self.abs_path_temp + os__sep + 'ResNodos'
-            # os__makedirs(self.abs_path_ResNodos)
-
-            # Imprime las  BDs generales a los distintos casos. Usa directorio temporal 'self.TempFolderName'
+            # Imprime las  BDs generales a los distintos casos. Usa directorio temporal 'self.abs_path_temp'
             smcfpl__in_out_files__ImprimeBDsGrales(self)
 
             # Crea lista con hidrologías de interés en los datos
@@ -292,21 +298,24 @@ class Simulacion(object):
             # Envía grupos de trabajos/casos (en serie) a los nodos
             for NumTrbjs in ListaNumTrbjs:
                 # Obtiene los 'NumTrbjs' primeros encontrados y utiliza sus BDs
-                DirsUsar = DirsList[c - 1: c - 1 + NumTrbjs]
-                Res = SendWork2Nodes.Send( NNodos=self.UsaSlurm['NumNodos'],
-                                           WTime=self.UsaSlurm['NodeWaittingTime'],
-                                           NTasks=self.UsaSlurm['ntasks'],
-                                           CPUxTask=self.UsaSlurm['cpu_per_tasks'],
-                                           SMCFPL_dir=self.abs_path_smcfpl,
-                                           TempData_dir=self.abs_path_temp,
-                                           DirsUsar=DirsUsar,
-                                           NumTrbjsHastaAhora=c,
-                                           NTotalCasos=NTotalCasos,
-                                           StageIndexesList = self.BD_Etapas.index.tolist(),
-                                           NumParallelCPU=self.NumParallelCPU )
+                # DirsUsar = DirsList[c - 1: c - 1 + NumTrbjs]
+                # Res = SendWork2Nodes.Send( NNodos=1,
+                #                            WTime=self.UsaSlurm['NodeWaittingTime'],
+                #                            NTasks=NumTrbjs,
+                #                            ntasks_per_node=NumTrbjs  # define
+                #                            CPUxTask=1  # self.UsaSlurm['cpu_per_tasks'],  # each task is single threaded
+                #                            SMCFPL_dir=self.abs_path_smcfpl,
+                #                            TempData_dir=self.abs_path_temp,
+                #                            DirsUsar=DirsUsar,
+                #                            NumTrbjsHastaAhora=c,
+                #                            NTotalCasos=NTotalCasos,
+                #                            StageIndexesList = self.BD_Etapas.index.tolist(),
+                #                            NumParallelCPU=self.NumParallelCPU,
+                #                            MaxItCongInter=self.MaxItCongInter,
+                #                            MaxItCongIntra=self.MaxItCongIntra, )
                 c += NumTrbjs
                 print("NumTrbjs:", NumTrbjs)
-                print("Res:", Res)
+                # print("Res:", Res)
 
         else:
             """
@@ -366,12 +375,14 @@ class Simulacion(object):
                 # ----
                 for NDem in range(1, self.NumVecesDem + 1):
                     for NGen in range(1, self.NumVecesGen + 1):
-                        # Crea los generadores de demanda y despacho según el caso
-                        PyGeneratorDemand = aux_smcfpl.GeneradorDemanda(DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
+                        # Crea los generadores de demanda y despacho por caso
+                        PyGeneratorDemand = aux_smcfpl.GeneradorDemanda(StageIndexesList=self.BD_Etapas.index.tolist(),
+                                                                        DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
                                                                         DF_TasaCReg=self.BD_DemProy[['TasaCliReg']],  # pandas DataFrame
                                                                         DF_DesvDec=self.BD_DemProy[['Desv_decimal']],  # pandas DataFrame
-                                                                        ListTypoCargasEta=self.ListTypoCargasEta)  # lista
-                        PyGeneratorDispatched = aux_smcfpl.GeneradorDespacho(Lista_TiposGen=self.ListTiposGenNoSlack,  # lista
+                                                                        DictTypoCargasEta=self.DictTypoCargasEta)  # diccionario
+                        PyGeneratorDispatched = aux_smcfpl.GeneradorDespacho(StageIndexesList=self.BD_Etapas.index.tolist(),
+                                                                             Dict_TiposGen=self.DictTiposGenNoSlack,  # lista
                                                                              DF_HistGenERNC=self.BD_HistGenRenovable,  # tupla de dos pandas DataFrame
                                                                              DF_TSF=self.BD_TSFProy,  # para cada tecnología que recurra con falla se asigna
                                                                              DF_PE_Hid=DF_PEsXEtapa,  # pandas DataFrame
@@ -384,22 +395,28 @@ class Simulacion(object):
                         if bool(self.NumParallelCPU):  # En paralelo
                             # Agrega la función con sus argumentos al Pool para ejecutarla en paralelo
                             Results.append( Pool.apply_async( NucleoCalculo.Calcular,
-                                                              ( ContadorCasos, HidNom,
+                                                              ( ContadorCasos, HidNom, self.BD_RedesXEtapa,
                                                                 self.BD_Etapas.index, DF_ParamHidEmb_hid,
                                                                 self.DFs_Entradas['df_in_smcfpl_seriesconf'],
+                                                                self.MaxItCongInter, self.MaxItCongIntra,
                                                                 ),
+                                                              # No se pueden pasar argumentos en generadores en paralelo
                                                               { 'DemGenerator_Dict': {k: v for k, v in PyGeneratorDemand},
                                                                 'DispatchGenerator_Dict': {k: v for k, v in PyGeneratorDispatched},
+                                                                'in_node': False,
                                                                 }
                                                               )
                                             )
                         else:
                             # (En serie) Aplica directamente para cada caso
-                            Dict_Casos[IdentificadorCaso] = NucleoCalculo.Calcular( ContadorCasos, HidNom,
+                            Dict_Casos[IdentificadorCaso] = NucleoCalculo.Calcular( ContadorCasos, HidNom, self.BD_RedesXEtapa,
                                                                                     self.BD_Etapas.index, DF_ParamHidEmb_hid,
                                                                                     self.DFs_Entradas['df_in_smcfpl_seriesconf'],
-                                                                                    DemGenerator_Dict=PyGeneratorDemand,
-                                                                                    DispatchGenerator_Dict=PyGeneratorDispatched,
+                                                                                    self.MaxItCongInter, self.MaxItCongIntra,
+                                                                                    self.abs_OutFilePath,
+                                                                                    DemGenerator_Dict={k: v for k, v in PyGeneratorDemand},
+                                                                                    DispatchGenerator_Dict={k: v for k, v in PyGeneratorDispatched},
+                                                                                    in_node=False,
                                                                                     )
                         ContadorCasos += 1
 
@@ -626,8 +643,10 @@ def Crea_Etapas_Renovables(Etapas, DF_Solar, DF_Eolicas):
     return DF_Eta
 
 
-def Crea_SEPxEtapa( DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w, DF_TipoLineas, DF_TipoTrafos2w, DF_TipoTrafos3w, DF_TecGen,
-                    DF_TecCargas, Dict_DF_Mantenimientos, DF_Etapas, Sbase_MVA, NumParallelCPU):
+def Crea_SEPxEtapa( DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w,
+                    DF_TipoLineas, DF_TipoTrafos2w, DF_TipoTrafos3w, DF_TecGen,
+                    DF_TecCargas, Dict_DF_Mantenimientos, DF_Etapas, Sbase_MVA,
+                    NumParallelCPU):
     """
         Identifica los elementos del SEP que se encuentran habilitados en cada etapa topológica y estén estén disponibles en las etapas renovables.
         Utiliza la misma idea de la metodología de conversión tiempo-etapa para filtrar los elementos con menos de un día de duración. "Esto puede existir debido
@@ -652,7 +671,7 @@ def Crea_SEPxEtapa( DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w, 
     DictSalida = dict.fromkeys( DF_Etapas.index.tolist() )
     if not NumParallelCPU:
         for EtaNum, Etapa in DF_Etapas.iterrows():
-            print("EtaNum:", EtaNum)
+            # print("EtaNum:", EtaNum)
             Grid, ExtraData = CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w, DF_TipoLineas, DF_TipoTrafos2w,
                                                      DF_TipoTrafos3w, DF_TecGen, DF_TecCargas, Dict_DF_Mantenimientos, EtaNum, Sbase_MVA, TotalEtas)
             # Agrega información creada al DictSalida
@@ -685,8 +704,11 @@ def Crea_SEPxEtapa( DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w, 
     return DictSalida
 
 
-def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w, DF_TipoLineas, DF_TipoTrafos2w, DF_TipoTrafos3w, DF_TecGen,
-                           DF_TecCargas, Dict_DF_Mantenimientos, EtaNum, Sbase_MVA, TotalEtas):
+def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
+                           DF_TecTrafos3w, DF_TipoLineas, DF_TipoTrafos2w,
+                           DF_TipoTrafos3w, DF_TecGen, DF_TecCargas,
+                           Dict_DF_Mantenimientos, EtaNum, Sbase_MVA,
+                           TotalEtas):
     """
         Función que recibe la pelota para el completado de la red PandaPower en una etapa determinada.
         1.- Por cada etapa inicializa el SEP PandaPower
@@ -920,7 +942,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTra
     CondCalcMant = (EtaNum in Dict_DF_Mantenimientos['df_in_smcfpl_mantcargas'].index) & (not CargasDisp.empty)
     if CondCalcMant:
         CargasEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_mantcargas'].loc[[EtaNum], :]  # DataFrame de cargas y respectivas columnas
-        # 7.1- identifica los trafos que se definan operativos, con flag Operativa == True para sobrescribir parámetros
+        # 7.1- identifica las cargas que se definan operativos, con flag Operativa == True para sobrescribir parámetros
         CargasEnMantOp = CargasEnMant[ CargasEnMant['Operativa'] ].drop_duplicates(keep='first')
         # 7.2- sobrescribe nuevos parámetros de los operativos
         CargasDisp.loc[ CargasEnMantOp['LoadNom'], : ] = CargasEnMantOp.reset_index(drop=True).set_index('LoadNom')
@@ -996,7 +1018,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTra
     pdSerie_GenRef = GenDisp[GenDisp['EsSlack']].squeeze()  # convert single row pandas DataFrame to Series
     IndBarraConn = Grid['bus'][ Grid['bus']['name'] == pdSerie_GenRef['NomBarConn'] ].index[0]  # toma la primera coincidencia
     pp__create_ext_grid( Grid, bus=IndBarraConn, vm_pu=1.0, va_degree=0.0, name=pdSerie_GenRef.name,
-                         max_p_kw=pdSerie_GenRef['PmaxMW'] * 1e3, min_p_kw=pdSerie_GenRef['PminMW'] * 1e3 )
+                         max_p_kw=-pdSerie_GenRef['PmaxMW'] * 1e3, min_p_kw=-pdSerie_GenRef['PminMW'] * 1e3 )  # negativo para generación
     # 10.- Elimina el generador de referencia del DataFrame de disponibles
     GenDisp.drop(labels=pdSerie_GenRef.name, axis='index', inplace=True)
 
@@ -1005,23 +1027,36 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTra
         IndBarraConn = Grid['bus'][ Grid['bus']['name'] == Generador['NomBarConn'] ].index[0]
         # Notar que se le asigna la potencia nominal a la carga. Ésta es posteriormente modificada según los parámetros de la etapa en cada proceso
         pp__create_gen(Grid, bus=IndBarraConn, name=GenNom, p_kw=-Generador['PmaxMW'] * 1e3,
-                       min_p_kw=-Generador['PminMW'] * 1e3, type=Generador['GenTec'])  # p_kw es negativo para generación
+                       max_p_kw=-Generador['PmaxMW'] * 1e3, min_p_kw=-Generador['PminMW'] * 1e3,
+                       type=Generador['GenTec'])  # p_kw es negativo para generación
 
     # 12.- Elimina los elementos del sistema en caso de quedan sin aislados (Sin conexión a Gen Ref) producto de mantención
     #      Notar que pueden definirse múltiples Generadores de referencia, los cuales podrán quedar separados eléctricamente.
-    SetBarrasAisladas = pp__topology__unsupplied_buses(Grid)
-    if bool(SetBarrasAisladas):
-        logger.warn("Existen sistema aislado sin conexión con Gen Ref. Eliminándolo...")
-        # Notar como los sistemas quedan separados cuando existe más de una Barra de Referencia,
-        # dada por el generador de referencia (angV = 0). No da Warning cuando ésto ocurre.
-        pp__drop_inactive_elements(Grid)  # Incluye logger Info level. From pandapower
+    # SetBarrasAisladas = pp__topology__unsupplied_buses(Grid)
+    # if bool(SetBarrasAisladas):
+    #     logger.warn("Existen sistema aislado sin conexión con Gen Ref. Eliminándolo...")
+    #     # Notar como los sistemas quedan separados cuando existe más de una Barra de Referencia,
+    #     # dada por el generador de referencia (angV = 0). No da Warning cuando ésto ocurre.
+    #     pp__drop_inactive_elements(Grid)  # Incluye logger Info level. From pandapower
 
     # 13.- Actualiza el diccionario ExtraData con información adicional
-    ExtraData['CVarGenRef'] = float(pdSerie_GenRef['CVar'])  # costo variable unidad de referencia (Red Externa)
-    ExtraData['TecGenSlack'] = str(pdSerie_GenRef['GenTec'])  # Nombre de la tecnología del generador de referencia
-    ExtraData['NumLoads'] = Grid['load'].shape[0]  # Número de cargas existentes por etapa
-    # ExtraData['NumGenNoSlack'] = Grid['gen'].shape[0]  # Número de generadores (no slack) existentes por etapa
-    ExtraData['Tipos'] = Grid['gen'][['type']]  # pandas DataFrame del índice de generadores en la Grilla y Tipo de tecnología
+    # Costo variable unidad de referencia (Red Externa)
+    ExtraData['CVarGenRef'] = float(pdSerie_GenRef['CVar'])
+    # Nombre de la tecnología del generador de referencia
+    ExtraData['TecGenSlack'] = str(pdSerie_GenRef['GenTec'])
+    # Número de cargas existentes por etapa
+    ExtraData['NumLoads'] = Grid['load'].shape[0]
+    # pandas DataFrame del índice de generadores en la Grilla y Tipo de tecnología
+    ExtraData['Tipos'] = Grid['gen'][['type']]
+    # pandas DataFrame del índice de generadores en la Grilla y CVar
+    ExtraData['CVarGenNoRef'] = pd__DataFrame( data=GenDisp.loc[ Grid['gen']['name'], 'CVar'].values,
+                                               index=Grid['gen'].index,
+                                               columns=['CVar'])
+    ExtraData['CVarGenNoRef'] = ExtraData['CVarGenNoRef'].astype({'CVar': float})
+    # potencia permitida por transformador 'trafo2w'
+    ExtraData['PmaxMW_trafo2w'] = Trafo2wDisp[['Pmax_AB_MW', 'Pmax_BA_MW']]
+    # potencia permitida por transformador 'trafo3w'
+    ExtraData['PmaxMW_trafo3w'] = Trafo3wDisp[['Pmax_inA_MW', 'Pmax_outA_MW', 'Pmax_inB_MW', 'Pmax_outB_MW', 'Pmax_inC_MW', 'Pmax_outC_MW']]
 
     logger.debug("! SEP en etapa {}/{} creado.".format(EtaNum, TotalEtas))
     return (Grid, ExtraData)

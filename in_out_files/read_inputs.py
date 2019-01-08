@@ -24,7 +24,7 @@ def read_sheets_to_dataframes(ruta, NombreLibro, NumParallelCPU):
     """
     logger.debug("! entrando en función: 'read_sheets_to_dataframes' ...")
     HojasNecesarias = {
-        # Nombre de hoja necesaria: (varable1, varable2, ...)
+        # Nombre de hoja necesaria: (varable1, varable2, ...). Notar que da lo mismo el orden, pero no deben existir otras columnas entremedio o error.
         'in_smcfpl_tecbarras'    : ( 'BarNom'        , 'Vnom')        ,
         'in_smcfpl_teclineas'    : ( 'LinNom'        , 'BarraA'       , 'BarraB'       , 'Parallel'    , 'Largo_km'    , 'TipoNom'       , 'Pmax_AB_MW'   , 'Pmax_BA_MW')  ,
         'in_smcfpl_tectrafos2w'  : ( 'Trafo2wNom'    , 'BarraA_HV'    , 'BarraB_LV'    , 'Parallel'    , 'TipoNom'     , 'Pmax_AB_MW'  , 'Pmax_BA_MW')   ,
@@ -39,7 +39,7 @@ def read_sheets_to_dataframes(ruta, NombreLibro, NumParallelCPU):
         'in_smcfpl_mantbarras'   : ( 'BarNom'        , 'FechaIni'     , 'FechaFin')    ,
         'in_smcfpl_mantgen'      : ( 'GenNom'        , 'FechaIni'     , 'FechaFin'     , 'PmaxMW'      , 'PminMW'      , 'CVar'          , 'NomBarConn'   , 'Operativa'    , 'EsSlack')   ,
         'in_smcfpl_manttx'       : ( 'ElmTxNom', 'TipoElmn', 'FechaIni', 'FechaFin', 'Parallel', 'Largo_km', 'Pmax_AB_MW', 'Pmax_BA_MW', 'Operativa', 'BarraA', 'BarraB', 'BarraA_HV', 'BarraB_MV', 'BarraC_LV', 'BarraB_LV', 'Pmax_inA_MW', 'Pmax_outA_MW', 'Pmax_inB_MW', 'Pmax_outB_MW', 'Pmax_inC_MW', 'Pmax_outC_MW', 'TipoNom'),
-        'in_smcfpl_mantcargas'   : ( 'LoadNom'       , 'FechaIni'     , 'FechaFin'     , 'DemMax_MW'   , 'DemMax_MVAr' , 'NomBarConn'    , 'Operativa')   ,
+        'in_smcfpl_mantcargas'   : ( 'LoadNom'       , 'FechaIni'     , 'FechaFin'     , 'DemNom_MW'   , 'NomBarConn'  ,  'LoadTyp'      , 'Operativa')   ,
         'in_smcfpl_histsolar'    : ( 'Fecha'         , 'EgenMWh')     ,
         'in_smcfpl_histeolicas'  : ( 'Fecha'         , 'EgenMWhZ1'    , 'EgenMWhZ2'    , 'EgenMWhZ3'   , 'EgenMWhZ4')  ,
         'in_smcfpl_tsfproy'      : ( 'Fecha'         , 'Carbón'       , 'Gas-Diésel'   , 'Otras'       , 'Solar'       , 'Embalse'       , 'Pasada'       , 'Serie'        , 'EólicaZ1'      , 'EólicaZ2'    , 'EólicaZ3'       , 'EólicaZ4')      ,
