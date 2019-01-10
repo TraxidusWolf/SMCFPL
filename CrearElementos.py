@@ -32,6 +32,9 @@ logging.basicConfig(level=logging.DEBUG,
                     format="[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s")
 logger = logging.getLogger()
 
+# Cambia logger level de pandapower a WARNING
+# logging.getLogger("pandapower").setLevel(logging.WARNING)
+
 
 class Simulacion(object):
     """
@@ -1032,12 +1035,17 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
 
     # 12.- Elimina los elementos del sistema en caso de quedan sin aislados (Sin conexión a Gen Ref) producto de mantención
     #      Notar que pueden definirse múltiples Generadores de referencia, los cuales podrán quedar separados eléctricamente.
-    # SetBarrasAisladas = pp__topology__unsupplied_buses(Grid)
-    # if bool(SetBarrasAisladas):
-    #     logger.warn("Existen sistema aislado sin conexión con Gen Ref. Eliminándolo...")
-    #     # Notar como los sistemas quedan separados cuando existe más de una Barra de Referencia,
-    #     # dada por el generador de referencia (angV = 0). No da Warning cuando ésto ocurre.
-    #     pp__drop_inactive_elements(Grid)  # Incluye logger Info level. From pandapower
+    SetBarrasAisladas = pp__topology__unsupplied_buses(Grid)
+    if bool(SetBarrasAisladas):
+        logger.warn("Existen sistema aislado sin conexión con Gen Ref. Eliminándolo...")
+        # Notar como los sistemas quedan separados cuando existe más de una Barra de Referencia,
+        # dada por el generador de referencia (angV = 0). No da Warning cuando ésto ocurre.
+        pp__drop_inactive_elements(Grid)  # Incluye logger Info level. From pandapower
+        # Descarta de los TrafosDisp y LinsDisp, aquellos que no se
+        # encuentran activos luego de eliminar los desenergizados
+        Trafo2wDisp = Trafo2wDisp.loc[ Grid['trafo'].name, :]
+        Trafo3wDisp = Trafo3wDisp.loc[ Grid['trafo3w'].name, :]
+        LinsDisp = LinsDisp.loc[ Grid['line'].name, :]
 
     # 13.- Actualiza el diccionario ExtraData con información adicional
     # Costo variable unidad de referencia (Red Externa)
@@ -1057,6 +1065,8 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
     ExtraData['PmaxMW_trafo2w'] = Trafo2wDisp[['Pmax_AB_MW', 'Pmax_BA_MW']]
     # potencia permitida por transformador 'trafo3w'
     ExtraData['PmaxMW_trafo3w'] = Trafo3wDisp[['Pmax_inA_MW', 'Pmax_outA_MW', 'Pmax_inB_MW', 'Pmax_outB_MW', 'Pmax_inC_MW', 'Pmax_outC_MW']]
+    # potencia permitida por lineas 'line'
+    ExtraData['PmaxMW_line'] = LinsDisp[['Pmax_AB_MW', 'Pmax_BA_MW']]
 
     logger.debug("! SEP en etapa {}/{} creado.".format(EtaNum, TotalEtas))
     return (Grid, ExtraData)

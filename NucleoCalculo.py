@@ -8,6 +8,8 @@ from pandapower import rundcpp as pp__rundcpp
 import time
 from os import sep as os__sep
 from pandapower import from_pickle as pp__from_pickle
+from pandapower import select_subnet as pp__select_subnet
+from pandapower.topology import connected_components as pp__topology__connected_components
 from pandas import DataFrame as pd__DataFrame
 from pandas import concat as pd__concat
 # from smcfpl.aux_funcs import overloaded_trafo2w as aux_smcfpl__overloaded_trafo2w
@@ -103,7 +105,7 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         # print("Grid:\n", Grid)
         # print("Grid['gen']:\n", Grid['gen'])
         # print("Grid['load']:\n", Grid['load'])
-        print("Grid['trafo']:\n", Grid['trafo'])
+        # print("Grid['trafo']:\n", Grid['trafo'])
 
         #
         # Revisa las grillas en cada etapa para verificar que el balance de potencia es posible (Gen-Dem)
@@ -148,6 +150,8 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
 
         #
         # Calcula CMg previo congestión [$US/MWh]  # CVar en [$US/MWh]
+        # Descarga las unidades que posean generación nula
+
         # Identifica el índice del generador con mayor costo variable
         IndMarginGen = Dict_ExtraData['CVarGenNoRef'].idxmax(axis='index')[0]  # primer GenNoRef
         CVarMarginGen = Dict_ExtraData['CVarGenNoRef']['CVar'][IndMarginGen]
@@ -177,14 +181,11 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             #
             # Identifica si el flujo de P va de B a A
             pdSeries = Grid.res_trafo['p_hv_kw'] < Grid.res_trafo['p_lv_kw']
-            try:
-                # Asume BarraA como HV y BarraB como LV
-                pdSeries_MaxP = Dict_ExtraData['PmaxMW_trafo2w']['Pmax_AB_MW'].values * pdSeries
-                pdSeries_MaxP += Dict_ExtraData['PmaxMW_trafo2w']['Pmax_BA_MW'].values * ~pdSeries
-                # Convierte la base de potencia del elemento a lo nueva límite
-                Grid.res_trafo['loading_percent'] *= Grid.trafo['sn_kva'] / (pdSeries_MaxP * 1e3)
-            except Exception:
-                import pdb; pdb.set_trace()  # breakpoint 7457eb55 //
+            # Asume BarraA como HV y BarraB como LV
+            pdSeries_MaxP = Dict_ExtraData['PmaxMW_trafo2w']['Pmax_AB_MW'].values * pdSeries
+            pdSeries_MaxP += Dict_ExtraData['PmaxMW_trafo2w']['Pmax_BA_MW'].values * ~pdSeries
+            # Convierte la base de potencia del elemento a lo nueva límite
+            Grid.res_trafo['loading_percent'] *= Grid.trafo['sn_kva'] / (pdSeries_MaxP * 1e3)
         if not Grid['trafo3w'].empty:
             # Para Trafo3w (P positivo hacia adentro)
             #
@@ -226,6 +227,7 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         # Obtiene lista del tipo de congestiones (TypeElmnt, IndGrilla)
         InterCongestion, IntraCongestion = rutina_TipoCong(Grid, max_load=100)
 
+        # import pdb; pdb.set_trace()  # breakpoint 49a4976c //
         #
         # Inicializa contadores de Congestiones (int)
         ContadorInter = ContadorIntra = 0
