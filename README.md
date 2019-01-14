@@ -1,10 +1,10 @@
-# SMCFPL model (Not finished)
+# SMCFPL model
 
 SMCFPL stands for "Simulaciones de Montecarlo con Flujo de Potencia Linealizado" and pretends to act as a generator of possible scenarios of generation, demand and hydrology for a specific Electric Power System.
 
 ## Based on
 
-This model is strongly based on pandapower (1.6.0), PYPOWER (5.1.4), networkx (2.2), pandas (0.23.4) and xlrd (1.2.0) packages.
+This model is strongly based on PandaPower (1.6.0), PYPOWER (5.1.4), Networkx (2.2), Pandas (0.23.4) and xlrd (1.2.0) packages.
 
 **Disclaimer:** SMCFPL package is mainly tested under python 3.6.
 
@@ -14,7 +14,7 @@ In the source code, there is a directory called "*EntradaDePrueba*" which has tw
 
 ### Contact
 
-Any suggestions, comments, questions, errors found or contributions, please create an Issue with proper labels.
+Any suggestions, comments, questions, errors found or possible contributions, please create an Issue with proper labels.
 
 [comment]: # (## TODO)
 
