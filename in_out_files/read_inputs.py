@@ -45,7 +45,7 @@ def read_sheets_to_dataframes(ruta, NombreLibro, NumParallelCPU):
         'in_smcfpl_tsfproy'      : ( 'Fecha'         , 'Carbón'       , 'Gas-Diésel'   , 'Otras'       , 'Solar'       , 'Embalse'       , 'Pasada'       , 'Serie'        , 'EólicaZ1'      , 'EólicaZ2'    , 'EólicaZ3'       , 'EólicaZ4')      ,
         'in_smcfpl_histhid'      : ( 'Año'           , 'abril'        , 'mayo'         , 'junio'       , 'julio'       , 'agosto'        , 'septiembre'   , 'octubre'      , 'noviembre'     , 'diciembre'   , 'enero'          , 'febrero'        , 'marzo'          , 'TOTAL')          ,
         'in_smcfpl_ParamHidEmb'  : ( ('Humeda', 'CVmin') , ('Media', 'CVmin') , ('Humeda', 'CVmax') , ('Media', 'CVmax') , ('Humeda', 'CotaMax') , ('Seca', 'b') , ('Seca', 'CotaMin') , ('Media', 'CotaMax') , ('Seca', 'CVmin') , ('Seca', 'CotaMax') , ('Media', 'b') , ('Humeda', 'b') , ('Humeda', 'CotaMin') , ('Media', 'CotaMin') , ('Seca', 'CVmax') ) ,
-        'in_smcfpl_seriesconf'   : ( 'NombreSerie'   , 'CenNom'       , 'FuncCosto')
+        'in_smcfpl_seriesconf'   : ( 'NombreEmbalse'   , 'CenNom'       , 'FuncCosto')
     }
     # Ruta completa (relativa) donde se encuentra el archivo
     RutaCompleta = ruta + os__sep + NombreLibro
@@ -209,7 +209,7 @@ def Agrupa_data_ERNC_Y_HistDem(DF):
 
     # Manejo de errores en datos mínimos
     if RTiempoData < dt__timedelta(days=364, hours=23):
-        msg = "Hoja '{}' debe tener poseer como mínimo un rango de tiempo total de 364 días y 23 horas.".format(DF.name[3:])
+        msg = "Hoja '{}' debe poseer como mínimo un rango de tiempo total de 364 días y 23 horas.".format(DF.name[3:])
         logger.error(msg)
         raise ValueError(msg)
 

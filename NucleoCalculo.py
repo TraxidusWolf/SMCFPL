@@ -14,7 +14,7 @@ from pandas import DataFrame as pd__DataFrame
 from pandas import concat as pd__concat
 # from smcfpl.aux_funcs import overloaded_trafo2w as aux_smcfpl__overloaded_trafo2w
 # from smcfpl.aux_funcs import overloaded_trafo3w as aux_smcfpl__overloaded_trafo3w
-from smcfpl.aux_funcs import rutina_TipoCong
+from smcfpl.aux_funcs import TipoCong as aux_funcs__TipoCong
 
 
 import logging
@@ -90,7 +90,7 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             # # with open(+FileName, 'r') as f:
 
         else:
-            """Carga la grilla para actualziar los valores"""
+            """Carga la grilla para actualizar los valores"""
             Grid = Grillas[StageNum]['PandaPowerNet']
             Dict_ExtraData = Grillas[StageNum]['ExtraData']
             D = DemGenerator_Dict[StageNum]  # pandas DataFrame
@@ -225,9 +225,9 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
 
         #
         # Obtiene lista del tipo de congestiones (TypeElmnt, IndGrilla)
-        InterCongestion, IntraCongestion = rutina_TipoCong(Grid, max_load=100)
+        ListaCongInter, ListaCongIntra = aux_funcs__TipoCong(Grid, max_load=100)
 
-        # import pdb; pdb.set_trace()  # breakpoint 49a4976c //
+        import pdb; pdb.set_trace()  # breakpoint 49a4976c //
         #
         # Inicializa contadores de Congestiones (int)
         ContadorInter = ContadorIntra = 0

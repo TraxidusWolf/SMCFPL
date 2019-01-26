@@ -1,7 +1,9 @@
 from datetime import timedelta as dt__timedelta
 from pandapower import overloaded_lines as pp__overloaded_lines
 from pandapower.topology import create_nxgraph as pp__create_nxgraph
+from pandapower import select_subnet as pp__select_subnet
 from networkx import has_path as nx__has_path
+from networkx import connected_component_subgraphs as nx__connected_component_subgraphs
 from pandas import DataFrame as pd__DataFrame, date_range as pd__date_range, Series as pd__Series
 from pandas import datetime as pd__datetime, set_option as pd__set_option
 from pandas import concat as pd__concat, Timedelta as pd__Timedelta
@@ -32,7 +34,29 @@ def print_full_df():
 
 def Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref_fija=True):
     """
-        Crea las
+        En caso de habilitarse 'ref_fija':
+            Se fija primera fila como referencia. En caso de existir
+            un día o más de diferencia con respecto a la siguiente
+            fecha, éstas se marcan como fechas límite y se desplaza
+            la referencia a la última de las fechas comparadas.
+            De lo contrario, se mide con respecto a la subsiguiente.
+            Proceso finaliza luego de cuando la referencia llega a
+            la penúltima fecha disponible.
+
+        En caso de NO habilitarse 'ref_fija':
+            Se fija primera fila como referencia. En caso de existir
+            un día o más de diferencia con respecto a la siguiente
+            fecha, éstas se marcan como fechas límite. De lo contrario,
+            se avanza la referencia a la siguiente y se mide con
+            respecto a la que le sigue desde aquí. Proceso finaliza
+            luego de cuando la referencia llega a la penúltima fecha
+            disponible.
+
+        Notar que el último valor no es considerado (por reducción de indice en comparación y
+        ser éste la fecha de termino de simulación). While es necesario para facilitar el
+        salto de filas en iteración.
+
+        Retorna un DataFrama de columnas 'FechaIni' y 'FechaFin'. Con Index.name = 'EtaNum'.
     """
     logger.debug("! entrando en función: 'Crea_Etapas_desde_Cambio_Mant' (aux_funcs.py) ...")
     fila = 0
@@ -178,7 +202,8 @@ def Filtra_DataFrame_Agrupado(DF_Entrante, MesInicio, DiaInicio, HoraInicio, Mes
 def TasaDemandaEsperada_a_Etapa(DF_ProyDem, BD_Etapas, FechaIniSim, FechaFinSim):
     """
         Transforma la información del dataframe de demanda proyectada (temporal - mensual) a sus correspondientes etapa dentro del horizonte de simulación.
-        Notar que para los meses que no sean informados, mantendrán la misma tasa que el último informado
+        Notar que para los meses que no sean informados, mantendrán la misma tasa que el último informado. La tasa de crecimiento para a referenciarse respecto
+        al valor de demanda inicial.
 
         Pasos:
         1.- Desde la fecha inicial de simulación (FechaIniSim) hasta la fecha final de simulación (FechaFinSim), genera pandas date_range mensual.
@@ -206,7 +231,7 @@ def TasaDemandaEsperada_a_Etapa(DF_ProyDem, BD_Etapas, FechaIniSim, FechaFinSim)
     DF_ProyDem.fillna(method='ffill', inplace=True)  # 'forward fill': reemplaza nan values con el valor anterior válido. De no existir queda como nan.
     DF_ProyDem.fillna(0, inplace=True)  # En caso de no existir primer valor válido de tasa de crecimiento se considera nula,
     # 5.- Calcula la tasa de crecimiento (CLibre y CRegulado) acumulativa respecto a la primera fecha del DF. Recordar que el valor en cada mes es la tasa hacia el próximo mes.
-    DF_TasaAcumulativa = DF_ProyDem + 1  # agrega constante a todos los valores del DataFrame
+    DF_TasaAcumulativa = DF_ProyDem + 1  # agrega constante a todos los valores del DataFrame (para hacer modificación c/r valor inicial)
     DF_TasaAcumulativa = DF_TasaAcumulativa.cumprod(axis='index')   # recordar que para referenciar todos al valor inicial: D_fin = D_ini*Prod i=1 N (1+tasa_i)
     # 6.- Para cada etapa en BD_Etapas encuentra el promedio de tasas.
     DF_Salida = pd__DataFrame(columns=['EtaNum', 'TasaCliLib', 'TasaCliReg']).set_index('EtaNum')
@@ -642,17 +667,20 @@ def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_Tas
         IndCReg = DictTypoCargasEta[EtaNum][ DictTypoCargasEta[EtaNum]['type'] == 'R' ].index
 
         #
-        # Nueva tasa de los Clientes Libres
+        # Utiliza crecimiento esperado (DF_TasaCLib | DF_TasaCReg) como valor promedio para cada cliente,
+        # sujeto a la desviación en la proyección en la proyección de demanda pasada (referida a esta etapa)
+        #
+        # Genera nueva tasa de los Clientes Libres.
         dataCLib = np__random__normal( loc=float(DF_TasaCLib.loc[EtaNum, :]),
                                        scale=float(DF_DesvDec.loc[EtaNum, :]),
                                        size=len(IndCLib))
-        # Nueva tasa de los Clientes Regulados
+        # Genera nueva tasa de los Clientes Regulados.
         dataCReg = np__random__normal( loc=float(DF_TasaCReg.loc[EtaNum, :]),
                                        scale=float(DF_DesvDec.loc[EtaNum, :]),
                                        size=len(IndCReg))
         # Asigna los datos Regulados y Libres al pandas DataFrame de salida
-        DF_Salida.loc[IndCLib, 'PDem_pu'] = dataCLib  # demanda en [p.u.] ya que salen de valores decimales en la etapa y pueden ser cualquier valor
-        DF_Salida.loc[IndCReg, 'PDem_pu'] = dataCReg  # demanda en [p.u.] ya que salen de valores decimales en la etapa y pueden ser cualquier valor
+        DF_Salida.loc[IndCLib, 'PDem_pu'] = dataCLib  # demanda en [p.u.] ya que salen de valores DECIMALES en la etapa
+        DF_Salida.loc[IndCReg, 'PDem_pu'] = dataCReg  # demanda en [p.u.] ya que salen de valores DECIMALES en la etapa
         yield ( EtaNum,  DF_Salida)
 
 
@@ -868,21 +896,43 @@ def overloaded_trafo3w(Grid, max_load=100):
         return Grid['res_trafo3w'][ Grid['res_trafo3w']['loading_percent'] > max_load ].index
 
 
-def rutina_TipoCong(Grid, max_load=100):
+def TipoCong(Grid, max_load=100):
+    """
+        Identifica los grupos de elementos congestionados. El umbral para la cargabilidad
+        del elemento de transmisión está dado en porcentaje por el parámetro 'max_load'.
+        Para efectos prácticos los transformadores de tres devanados son considerados
+        de potencia infinita, por lo que no se revisan para congestiones.
+        Se hace de valer que los indiceis de las matrices de la red PandaPower
+        son los mismo que los indices de los nodos en los grafos y subgrafos creados, siempre
+        y cuando no exista un elemento perdido que las conecte, de lo contrario, se crea el nodo.
+        Retorna una tupla con dos listas de grupos de elementos congestionados.
+        Ejemplo:
+            ( ListaCongInter, ListaCongIntra )
+            donde:
+                ListaCongIntra = [GCong1, GCong2, ...]
+                ListaCongInter = [GCong1, GCong2, ...]
+                GCong# = {  # diccionario
+                            'line': [IndTableElmn, IndTableElmn, ...],
+                            'trafo2w': [IndTableElmn, IndTableElmn, ...],
+                            # 'trafo3w': [IndTableElmn, IndTableElmn, ...],
+                        }
+    """
     #
     # Verifica si existen congestiones (sobre 100% de carga), obtiene
     # los indices de cada DataFrame
     Saturated_lines = pp__overloaded_lines(Grid, max_load=max_load)
     Saturated_trafo2w = overloaded_trafo2w(Grid, max_load=max_load)
-    Saturated_trafo3w = overloaded_trafo3w(Grid, max_load=max_load)
+    # Saturated_trafo3w = overloaded_trafo3w(Grid, max_load=max_load)
 
     #
-    # Inicializa Listas de Congestiones tipo Inter e Intra
-    InterCongestion = []
-    IntraCongestion = []
+    # Inicializa set temporales de Congestiones tipo Inter e Intra
+    InterCongestion = pd__DataFrame(columns=['TypeElmnt', 'IndTable', 'BarraA', 'BarraB', 'FluP_AB_kW'])
+    IntraCongestion = pd__DataFrame(columns=['TypeElmnt', 'IndTable', 'BarraA', 'BarraB', 'FluP_AB_kW'])
 
-    # Inicializa diccionario de grupo de elementos congestionados
-    Dict_GroupElmnts = {'line': Saturated_lines, 'trafo': Saturated_trafo2w, 'trafo3w': Saturated_trafo3w}
+    # IDENTIFICA LAS TIPOS DE CONGESTIONES en DataFrames
+    #
+    # Inicializa diccionario de grupo de elementos congestionados (solo para iterar for y reducir lineas código)
+    Dict_GroupElmnts = {'line': Saturated_lines, 'trafo': Saturated_trafo2w}  # , 'trafo3w': Saturated_trafo3w}
     # Para cada congestión encontrada Identifica el tipo (Inter - Intra)
     for TypeElmnt, GroupElmnts in Dict_GroupElmnts.items():
         if GroupElmnts is None:
@@ -904,6 +954,7 @@ def rutina_TipoCong(Grid, max_load=100):
                 Graph.remove_edge(Ind_NIni, Ind_NFin)
                 # Determina si aún sin el elemento existe conexión
                 IsIntra = nx__has_path(Graph, Ind_NIni, Ind_NFin)
+                name_from_BarraA = 'p_from_kw'
             elif TypeElmnt == 'trafo':
                 Ind_NIni = Grid[TypeElmnt]['hv_bus'][CongBrnch]
                 Ind_NFin = Grid[TypeElmnt]['lv_bus'][CongBrnch]
@@ -911,26 +962,177 @@ def rutina_TipoCong(Grid, max_load=100):
                 Graph.remove_edge(Ind_NIni, Ind_NFin)
                 # Determina si aún sin el elemento existe conexión
                 IsIntra = nx__has_path(Graph, Ind_NIni, Ind_NFin)
-            elif TypeElmnt == 'trafo3w':  # convierte a conexión delta
-                Ind_N_hv = Grid[TypeElmnt]['hv_bus'][CongBrnch]
-                Ind_N_mv = Grid[TypeElmnt]['mv_bus'][CongBrnch]
-                Ind_N_lv = Grid[TypeElmnt]['lv_bus'][CongBrnch]
-                # Elimina los Edges del grafo
-                Graph.remove_edge(Ind_N_hv, Ind_N_mv)
-                Graph.remove_edge(Ind_N_mv, Ind_N_lv)
-                Graph.remove_edge(Ind_N_hv, Ind_N_lv)
-                # Determina si aún sin el elemento existe conexión
-                IsIntra = nx__has_path(Graph, Ind_N_hv, Ind_N_mv)
-                IsIntra |= nx__has_path(Graph, Ind_N_mv, Ind_N_lv)
-                IsIntra |= nx__has_path(Graph, Ind_N_lv, Ind_N_hv)
+                name_from_BarraA = 'p_hv_kw'
             else:
+                print("No es elemento identificado en congestión!")
                 pass
 
-            # Formato lista congestiones: (ElmntType, Ind_Grid_Table)
             if IsIntra:
                 # aún sin el elemento existe camino
-                IntraCongestion.append( (TypeElmnt, CongBrnch) )
+                df_temp = pd__DataFrame(
+                    { 'TypeElmnt': [ TypeElmnt ],
+                      'IndTable': [ CongBrnch ],
+                      'BarraA': [ Ind_NIni ],
+                      'BarraB': [ Ind_NFin ],
+                      'FluP_AB_kW': [ abs(Grid['res_' + TypeElmnt].at[CongBrnch, name_from_BarraA]) ],
+                      })
+                IntraCongestion = pd__concat([IntraCongestion, df_temp], axis='index', ignore_index=True)
+                # APROXIMA valores del flujo al kW (posibles variaciones numéricas)
+                IntraCongestion[['FluP_AB_kW']] = IntraCongestion['FluP_AB_kW'].round(decimals=0)
             else:
                 # elemento separa el SEP
-                InterCongestion.append( (TypeElmnt, CongBrnch) )
-    return (InterCongestion, IntraCongestion)
+                df_temp = pd__DataFrame(
+                    { 'TypeElmnt': [ TypeElmnt ],
+                      'IndTable': [ CongBrnch ],
+                      'BarraA': [ Ind_NIni ],
+                      'BarraB': [ Ind_NFin ],
+                      'FluP_AB_kW': [ abs(Grid['res_' + TypeElmnt].at[CongBrnch, name_from_BarraA]) ],
+                      })
+                InterCongestion = pd__concat([InterCongestion, df_temp], axis='index', ignore_index=True)
+                # APROXIMA valores del flujo al kW (posibles variaciones numéricas)
+                InterCongestion[['FluP_AB_kW']] = InterCongestion['FluP_AB_kW'].round(decimals=0)
+
+    # Inicializa listas de salida
+    ListaCongInter = []
+    ListaCongIntra = []
+
+    """
+         ####                                ###           #
+         #   #                                #            #
+         #   #   ###   # ##    ###            #    # ##   ####    ###   # ##
+         ####       #  ##  #      #           #    ##  #   #     #   #  ##  #
+         #       ####  #       ####           #    #   #   #     #####  #
+         #      #   #  #      #   #           #    #   #   #  #  #      #
+         #       ####  #       ####          ###   #   #    ##    ###   #
+    """
+    # Por cada congestión del tipo Intra verifica las
+    # potencias circulantes similares agrupándolas, además
+    # estando los elementos adyacentes (una barra en común)
+    #
+    for FluP, DF_cong in InterCongestion.groupby(by=['FluP_AB_kW']):
+        DF_cong.reset_index(drop=True, inplace=True)  # para trabajar con lo indices
+        # En caso de ser un DF de una fila, se agrega como grupo de congestión independiente
+        if DF_cong.shape[0] == 1:
+            tipoElemento = DF_cong.iloc[0]['TypeElmnt']
+            indiceTabla = DF_cong.iloc[0]['IndTable']
+            if tipoElemento == 'line':
+                ListaCongIntra.append( {'line': [indiceTabla], 'trafo': []} )
+            else:
+                ListaCongIntra.append( {'line': [], 'trafo': [indiceTabla]} )
+            continue
+        elif DF_cong.empty:
+            # extraño caso que estuviera vacío (quizá no tanto)
+            continue
+
+        IndBarras = set()
+        # Obtiene los indices de las barras por cada fila
+        for row in DF_cong.iterrows():
+            IndBarras.update( set(DF_cong['BarraA']) )
+            IndBarras.update( set(DF_cong['BarraB']) )
+        # crea sub-grilla con las barras de las filas
+        SubGrilla = pp__select_subnet(Grid, IndBarras)
+        # obtiene grafo de la grilla
+        Grafo = pp__create_nxgraph(SubGrilla)
+        # identifica los subgrafos existentes.
+        # Aquí ya se sabe cuales son los grupos
+        for SubGrafo in nx__connected_component_subgraphs(Grafo):
+            # inicializa grupo de congestiones comunes
+            GrupoCongCom = {'line': [], 'trafo': []}
+            # Por cada arco del subgrafo, busca equivalente en Grid
+            for Arco in SubGrafo.edges:
+                # Obtiene los nodos/indice de barras del Grid del arco
+                NIni = Arco[0]
+                NFin = Arco[1]
+                # Encuentra el elemento de la Grilla que se encuentra entre esos nodos.
+                #
+                # verifica si existen trafos conectados aquí
+                Tw2 = Grid['trafo'][
+                    ( (Grid['trafo']['hv_bus'] == NIni) & (Grid['trafo']['lv_bus'] == NFin) ) |  # un sentido
+                    ( (Grid['trafo']['hv_bus'] == NFin) & (Grid['trafo']['lv_bus'] == NIni) )  # el otro sentido
+                ]
+                if not Tw2.empty:
+                    # agrega elemento encontrado al grupo. Solo una coincidencia.
+                    GrupoCongCom['trafo'].append(Tw2.index[0])
+                #
+                # verifica si existen lineas conectados aquí
+                Ln = Grid['line'][
+                    ( (Grid['line']['from_bus'] == NIni) & (Grid['line']['to_bus'] == NFin) ) |  # un sentido
+                    ( (Grid['line']['from_bus'] == NFin) & (Grid['line']['to_bus'] == NIni) )  # el otro sentido
+                ]
+                if not Ln.empty:
+                    # agrega elemento encontrado al grupo. Solo una coincidencia.
+                    GrupoCongCom['line'].append(Ln.index[0])
+            # Agrega grupo a lista
+            ListaCongIntra.append(GrupoCongCom)
+
+    """
+         ####                                ###           #
+         #   #                                #            #
+         #   #   ###   # ##    ###            #    # ##   ####   # ##    ###
+         ####       #  ##  #      #           #    ##  #   #     ##  #      #
+         #       ####  #       ####           #    #   #   #     #       ####
+         #      #   #  #      #   #           #    #   #   #  #  #      #   #
+         #       ####  #       ####          ###   #   #    ##   #       ####
+    """
+    # Por cada congestión del tipo Intra verifica las
+    # potencias circulantes similares agrupándolas, además
+    # estando los elementos adyacentes (una barra en común)
+    #
+    for FluP, DF_cong in IntraCongestion.groupby(by=['FluP_AB_kW']):
+        DF_cong.reset_index(drop=True, inplace=True)  # para trabajar con lo indices
+        # En caso de ser un DF de una fila, se agrega como grupo de congestión independiente
+        if DF_cong.shape[0] == 1:
+            tipoElemento = DF_cong.iloc[0]['TypeElmnt']
+            indiceTabla = DF_cong.iloc[0]['IndTable']
+            if tipoElemento == 'line':
+                ListaCongInter.append( {'line': [indiceTabla], 'trafo': []} )
+            else:
+                ListaCongInter.append( {'line': [], 'trafo': [indiceTabla]} )
+            continue
+        elif DF_cong.empty:
+            # extraño caso que estuviera vacío (quizá no tanto)
+            continue
+
+        IndBarras = set()
+        # Obtiene los indices de las barras por cada fila
+        for row in DF_cong.iterrows():
+            IndBarras.update( set(DF_cong['BarraA']) )
+            IndBarras.update( set(DF_cong['BarraB']) )
+        # crea sub-grilla con las barras de las filas
+        SubGrilla = pp__select_subnet(Grid, IndBarras)
+        # obtiene grafo de la grilla
+        Grafo = pp__create_nxgraph(SubGrilla)
+        # identifica los subgrafos existentes.
+        # Aquí ya se sabe cuales son los grupos
+        for SubGrafo in nx__connected_component_subgraphs(Grafo):
+            # inicializa grupo de congestiones comunes
+            GrupoCongCom = {'line': [], 'trafo': []}
+            # Por cada arco del subgrafo, busca equivalente en Grid
+            for Arco in SubGrafo.edges:
+                # Obtiene los nodos/indice de barras del Grid del arco
+                NIni = Arco[0]
+                NFin = Arco[1]
+                # Encuentra el elemento de la Grilla que se encuentra entre esos nodos.
+                #
+                # verifica si existen trafos conectados aquí
+                Tw2 = Grid['trafo'][
+                    ( (Grid['trafo']['hv_bus'] == NIni) & (Grid['trafo']['lv_bus'] == NFin) ) |  # un sentido
+                    ( (Grid['trafo']['hv_bus'] == NFin) & (Grid['trafo']['lv_bus'] == NIni) )  # el otro sentido
+                ]
+                if not Tw2.empty:
+                    # agrega elemento encontrado al grupo. Solo una coincidencia.
+                    GrupoCongCom['trafo'].append(Tw2.index[0])
+                #
+                # verifica si existen lineas conectados aquí
+                Ln = Grid['line'][
+                    ( (Grid['line']['from_bus'] == NIni) & (Grid['line']['to_bus'] == NFin) ) |  # un sentido
+                    ( (Grid['line']['from_bus'] == NFin) & (Grid['line']['to_bus'] == NIni) )  # el otro sentido
+                ]
+                if not Ln.empty:
+                    # agrega elemento encontrado al grupo. Solo una coincidencia.
+                    GrupoCongCom['line'].append(Ln.index[0])
+            # Agrega grupo a lista
+            ListaCongIntra.append(GrupoCongCom)
+
+    # Retorna valores
+    return (ListaCongInter, ListaCongIntra)

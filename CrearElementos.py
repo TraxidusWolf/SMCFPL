@@ -28,12 +28,16 @@ import smcfpl.SendWork2Nodes as SendWork2Nodes
 import smcfpl.NucleoCalculo as NucleoCalculo
 
 import logging
-logging.basicConfig(level=logging.DEBUG,
+Logging_level = logging.DEBUG
+logging.basicConfig(level=Logging_level,
                     format="[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s")
 logger = logging.getLogger()
 
 # Cambia logger level de pandapower a WARNING
 # logging.getLogger("pandapower").setLevel(logging.WARNING)
+# Cambia logger level de pandapower al actual
+logging.getLogger("pandapower").setLevel(logger.level)
+# logging.getLogger("pandapower").setLevel(Logging_level)
 
 
 class Simulacion(object):
@@ -452,20 +456,28 @@ def Crea_Etapas(DF_MantBarras, DF_MantTx, DF_MantGen, DF_MantLoad, DF_Solar, DF_
 
     :type DF_MantBarras: Pandas DataFrame
     :param DF_MantBarras: DataFrame de los mantnimientos futuros a las barras simuladas.
+
     :type DF_MantGen: Pandas DataFrame
     :param DF_MantGen: DataFrame de los mantenimientos futuros a las unidades generadoras simuladas.
+
     :type DF_MantTx: Pandas DataFrame
     :param DF_MantTx: DataFrame de los mantnimientos futuros a los elementos del sistema de transmisión simulados.
+
     :type DF_MantLoad: Pandas DataFrame
     :param DF_MantLoad: DataFrame de los mantnimientos futuros a las cargas simuladas.
+
     :type DF_Solar: Pandas DataFrame
     :param DF_Solar: DataFrame del historial para la(s) unidad(es) tipo representativas para las unidades solares.
+
     :type DF_Eolicas: Pandas DataFrame
     :param DF_Eolicas: DataFrame del historial para la(s) unidad(es) tipo representativas para las unidades eólicos.
+
     :type FechaComienzo: Datetime object
     :param FechaComienzo: Fecha y hora de la primera hora de la simulación.
+
     :type FechaTermino: Datetime object
     :param FechaTermino: Fecha y hora de la última hora de la simulación.
+
     """
     logger.debug("! entrando en función: 'Crea_Etapas' (CreaElementos.py) ...")
     Etapas = Crea_Etapas_Topologicas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, FechaComienzo, FechaTermino)
@@ -488,7 +500,7 @@ def Crea_Etapas_Topologicas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, F
     # Juntar todos los cambios DE FECHAS en un único pandas series. (Inicializa única columna)
     DF_CambioFechas = pd__DataFrame(data=[FechaComienzo, FechaTermino], columns=[0])
     for df in (DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad):
-        DF_CambioFechas = pd__concat([ DF_CambioFechas, df['FechaIni'], df['FechaFin'] ], axis=0, join='outer', ignore_index=True)
+        DF_CambioFechas = pd__concat([ DF_CambioFechas, df['FechaIni'], df['FechaFin'] ], axis='index', join='outer', ignore_index=True)
     # Elimina las fechas duplicadas
     DF_CambioFechas.drop_duplicates(keep='first', inplace=True)
     # Ordena en forma ascendente el pandas series
@@ -502,10 +514,14 @@ def Crea_Etapas_Topologicas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, F
     logger.info("Utilizando Método {} para diferencia de filas en Creación Etapas Topológicas.".format(Metodo_RefFila_EtaTopo))
     if Metodo_RefFila_EtaTopo == 1:
         """ Método 1: Metodo_RefFila_EtaTopo = 1 (Diferencia entre filas - referencia móvil)
-        En forma progresiva, desde la primera hasta la penúltima fila de cambios topológicos, se observa la diferencia de días
-        existentes entre la fila de referencia o fila actual y la siguiente. De ser ésta mayor a un día, se mueve la referencia
-        a la siguiente fila y se mide con respecto a la nueva siguiente. Se continúa observando los cambios entre filas hasta
-        cumplir con la condición requerida para así asignar la fecha como límite de etapa.
+        En caso de NO habilitarse 'ref_fija':
+            Se fija primera fila como referencia. En caso de existir
+            un día o más de diferencia con respecto a la siguiente
+            fecha, éstas se marcan como fechas límite. De lo contrario,
+            se avanza la referencia a la siguiente y se mide con
+            respecto a la que le sigue desde aquí. Proceso finaliza
+            luego de cuando la referencia llega a la penúltima fecha
+            disponible.
 
         Notar que el último valor no es considerado (por reducción de indice en comparación y ser éste la fecha de termino de simulación).
         While es necesario para facilitar el salto de filas en iteración.
@@ -516,10 +532,14 @@ def Crea_Etapas_Topologicas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, F
         return aux_smcfpl.Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref_fija=False)
     elif Metodo_RefFila_EtaTopo == 2:
         """ Método 2: Metodo_RefFila_EtaTopo (Diferencia respecto fila referencia)
-        En forma progresiva, desde la primera hasta la penúltima fila de cambios topológicos, se observa la
-        diferencia de cías existentes entre la fila actual (o de referencia) y la que le sigue. De ser ésta
-        menor a un día, se calcula la diferencia de la fila de referencia con respecto a la sub-siguiente hasta encontrarse
-        una diferencia mayor al límite requerido.
+        En caso de habilitarse 'ref_fija':
+            Se fija primera fila como referencia. En caso de existir
+            un día o más de diferencia con respecto a la siguiente
+            fecha, éstas se marcan como fechas límite y se desplaza
+            la referencia a la última de las fechas comparadas.
+            De lo contrario, se mide con respecto a la subsiguiente.
+            Proceso finaliza luego de cuando la referencia llega a
+            la penúltima fecha disponible.
 
         Notar que el valor de la fila saltado no es considerado a futuro, por lo que se considera como si no existiese.
         While es necesario para facilitar el salto de filas en iteración.
@@ -529,7 +549,7 @@ def Crea_Etapas_Topologicas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, F
         logger.debug("! saliendo de función: 'Crea_Etapas_Topologicas' (CreaElementos.py) ...")
         return aux_smcfpl.Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref_fija=True)
     else:
-        msg = "Metodo_RefFila_EtaTopo No fue ingresado válidamente en función 'Crea_Etapas_Topologicas' (CreaElementos.py)."
+        msg = "Método_RefFila_EtaTopo No fue ingresado válidamente en función 'Crea_Etapas_Topologicas' (CreaElementos.py)."
         logger.error(msg)
         raise ValueError(msg)
 
@@ -608,7 +628,9 @@ def Crea_Etapas_Renovables(Etapas, DF_Solar, DF_Eolicas):
         # Normaliza los valores respecto al máximo de aquellos existentes en la etapa.
         # DF_ERNC = DF_ERNC.divide(DF_ERNC.max(axis=0), axis='columns')  # 49 etapas total aprox SEP 39us
         #
-        DF_ERNC = DF_ERNC.divide(MaximoAnual, axis='columns')  # usa máximo anual en lugar del de la etapa (representación anual)  # 27 etapas total aprox SEP 39us
+        # usa máximo anual en lugar del de la etapa (representación anual)
+        # 27 etapas total aprox SEP 39us
+        DF_ERNC = DF_ERNC.divide(MaximoAnual, axis='columns')
 
         # En DF_Cambios obtiene el nombre de columna de aquel con mayor valor para las horas de la etapa
         DF_Cambios = DF_ERNC.idxmax(axis=1)  # axis=1 | axis='columns' : columns-wise
@@ -998,7 +1020,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
 
     # 8.7.- Identifica si NO se definió alguna unidad de referencia
     if not GenDisp['EsSlack'].any():
-        msg = "NO Existe Unidad definida de referencia para la Etapa {}! ...".format(EtaNum)
+        msg = "NO existe Unidad definida de referencia para la Etapa {}! ...".format(EtaNum)
         logger.warning(msg)
         GenRef = GenDisp.index[0]
         # 8.8.- Asigna primera coincidencia de generador dentro del pandas DataFrame como referencia
@@ -1037,7 +1059,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
     #      Notar que pueden definirse múltiples Generadores de referencia, los cuales podrán quedar separados eléctricamente.
     SetBarrasAisladas = pp__topology__unsupplied_buses(Grid)
     if bool(SetBarrasAisladas):
-        logger.warn("Existen sistema aislado sin conexión con Gen Ref. Eliminándolo...")
+        logger.warn("Existe sistema aislado sin conexión con Gen Ref. Eliminándolo...")
         # Notar como los sistemas quedan separados cuando existe más de una Barra de Referencia,
         # dada por el generador de referencia (angV = 0). No da Warning cuando ésto ocurre.
         pp__drop_inactive_elements(Grid)  # Incluye logger Info level. From pandapower
