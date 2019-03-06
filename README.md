@@ -4,7 +4,7 @@ SMCFPL stands for "Simulaciones de Montecarlo con Flujo de Potencia Linealizado"
 
 ## Based on
 
-This model is strongly based on PandaPower (1.6.0), PYPOWER (5.1.4), Networkx (2.2), Pandas (0.23.4) and xlrd (1.2.0) packages.
+This model is strongly based on PandaPower (1.6.1), PYPOWER (5.1.4), Networkx (2.2), Pandas (0.23.4) , numpy (1.15.4) and xlrd (1.0.0) packages.
 
 **Disclaimer:** SMCFPL package is mainly tested under python 3.6.
 
