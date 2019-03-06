@@ -22,6 +22,7 @@ from pandapower import create_load as pp__create_load, create_gen as pp__create_
 from pandapower import create_ext_grid as pp__create_ext_grid
 from pandapower.topology import unsupplied_buses as pp__topology__unsupplied_buses
 from pandapower import drop_inactive_elements as pp__drop_inactive_elements
+from pandapower import to_pickle as pp__to_pickle
 from multiprocessing import cpu_count as mu__cpu_count, Pool as mu__Pool
 import smcfpl.aux_funcs as aux_smcfpl
 import smcfpl.SendWork2Nodes as SendWork2Nodes
@@ -1090,5 +1091,8 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
     # potencia permitida por lineas 'line'
     ExtraData['PmaxMW_line'] = LinsDisp[['Pmax_AB_MW', 'Pmax_BA_MW']]
 
+    pp__to_pickle(Grid, 'Grilla_Eta' + str(EtaNum) + '.p')
+
     logger.debug("! SEP en etapa {}/{} creado.".format(EtaNum, TotalEtas))
+
     return (Grid, ExtraData)

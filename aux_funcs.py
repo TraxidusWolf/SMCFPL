@@ -902,7 +902,7 @@ def TipoCong(Grid, max_load=100):
         del elemento de transmisión está dado en porcentaje por el parámetro 'max_load'.
         Para efectos prácticos los transformadores de tres devanados son considerados
         de potencia infinita, por lo que no se revisan para congestiones.
-        Se hace de valer que los indiceis de las matrices de la red PandaPower
+        Se hace de valer que los indices de las matrices de la red PandaPower
         son los mismo que los indices de los nodos en los grafos y subgrafos creados, siempre
         y cuando no exista un elemento perdido que las conecte, de lo contrario, se crea el nodo.
         Retorna una tupla con dos listas de grupos de elementos congestionados.

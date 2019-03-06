@@ -15,6 +15,8 @@ from pandas import concat as pd__concat
 # from smcfpl.aux_funcs import overloaded_trafo2w as aux_smcfpl__overloaded_trafo2w
 # from smcfpl.aux_funcs import overloaded_trafo3w as aux_smcfpl__overloaded_trafo3w
 from smcfpl.aux_funcs import TipoCong as aux_funcs__TipoCong
+from smcfpl.Redespacho import redispatch as Redespacho__redispatch
+from smcfpl.smcfpl_exceptions import *
 
 
 import logging
@@ -88,66 +90,46 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             # print("FileName:", FileName)
             # # lee archivo correspondiente
             # # with open(+FileName, 'r') as f:
-
         else:
-            """Carga la grilla para actualizar los valores"""
-            Grid = Grillas[StageNum]['PandaPowerNet']
-            Dict_ExtraData = Grillas[StageNum]['ExtraData']
-            D = DemGenerator_Dict[StageNum]  # pandas DataFrame
-            print("D:", D)
-            G = DispatchGenerator_Dict[StageNum]  # pandas DataFrame
-            print("G:", G)
-            # D['PDem_pu'].values: puede ser negativo, positivo o cero, pero siempre en [p.u.]
-            Grid['load']['p_kw'] = Grid['load']['p_kw'] * D['PDem_pu'].values
-            # G['PGen_pu'].values: siempre va a estar entre 0 y 1 inclusive
-            Grid['gen']['p_kw'] = Grid['gen']['max_p_kw'] * G['PGen_pu'].values
-
-        # print("Grid:\n", Grid)
-        # print("Grid['gen']:\n", Grid['gen'])
-        # print("Grid['load']:\n", Grid['load'])
-        # print("Grid['trafo']:\n", Grid['trafo'])
+            # Carga la grilla y extradata con valores actualizados
+            Grid, Dict_ExtraData = UpdateGridPowers(Grillas, StageNum,
+                                                    DemGenerator_Dict,
+                                                    DispatchGenerator_Dict)
 
         #
-        # Revisa las grillas en cada etapa para verificar que el balance de potencia es posible (Gen-Dem)
-        PGenMaxSist = Grid['gen']['max_p_kw'].sum()
-        PGenSlackMax = Grid['ext_grid']['max_p_kw'].sum()
-        PDemSist = Grid['load']['p_kw'].sum()
-        # Cuantifica diferencia entre generación y demanda máxima. Negativo implica sobra potencia
-        DeltaP_Uninodal = PGenMaxSist + PGenSlackMax + PDemSist  # De ser positivo indica PNS!
+        # Verifica que el balance de potencia es posible en la etapa del caso (Gen-Dem)
+        DeltaP_Uninodal, msg = Power_available_after_dispatch(Grid)
         # Corrobora factibilidad del despacho uninodal
-        if DeltaP_Uninodal > 0:
-            msg = "No es posible abastecer la demanda en etapa {}/{} del caso {}!.".format(
-                StageNum, len(StageIndexesList), CasoNum)
+        if DeltaP_Uninodal > 0:  # De ser positivo indica PNS!
+            msg = msg.format(StageNum, len(StageIndexesList), CasoNum)
             logger.warn(msg)
+            #
             # ¿Eliminar etapa?¿?
             # DF_Etapas.drop(labels=[StageNum], axis='index', inplace=True)
             # ¿Escribir PNS?
-            #
             continue  # Continua con siguiente etapa
 
         #
         # Calcula el Flujo de Potencia Linealizado
         pp__rundcpp(Grid, trafo_model='pi', trafo_loading='power',
-                    check_connectivity=True, r_switch=0.0,
-                    trafo3w_losses='hv')
+                    check_connectivity=True, r_switch=0.0, trafo3w_losses='hv')
 
         #
-        # Verifica Potencia para el GenSlack sea menor que su máximo (Negativo generación)
-        PotSobrante = Grid['ext_grid'].loc[0, 'max_p_kw'] - Grid['res_ext_grid'].loc[0, 'p_kw']
-        # Verifica Potencia para el GenSlack sea mayor que su mínimo (Negativo generación)
-        PotFaltante = Grid['res_ext_grid'].loc[0, 'p_kw'] - Grid['ext_grid'].loc[0, 'min_p_kw']
-        # Acota rangos factibles de potencia de generación de GenSlack
-        if PotSobrante > 0:  # PGenSlack es más Negativo que Pmax
-            msg = "El generador de referencia está sobrecargado en etapa {}/{} del caso {}!.".format(
-                StageNum, len(StageIndexesList), CasoNum)
+        # Verifica que LA red externa se encuentre dentro de sus límites
+        GenRefExceeded, msg = check_limits_GenRef(Grid)
+        if GenRefExceeded == 1:  # PGenSlack es más Negativo que Pmax (sobrecargado)
+            msg = msg.format(StageNum, len(StageIndexesList), CasoNum)
             logger.info(msg)
             continue
-        if PotFaltante > 0:  # PGenSlack es más Positivo que Pmin
-            msg = "El generador de referencia está absorbiendo potencia en etapa {}/{} del caso {}!.".format(
-                StageNum, len(StageIndexesList), CasoNum)
+        elif GenRefExceeded == -1:  # PGenSlack es más Positivo que Pmin (comporta como carga)
+            msg = msg.format(StageNum, len(StageIndexesList), CasoNum)
             logger.info(msg)
             continue
 
+        ################################################################################
+        ################################################################################
+        ################################################################################
+        ################################################################################
         #
         # Calcula CMg previo congestión [$US/MWh]  # CVar en [$US/MWh]
         # Descarga las unidades que posean generación nula
@@ -164,64 +146,13 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             MarginUnit = ('gen', IndMarginGen, CVarMarginGen)
         else:  # cuando son iguales, se escoge una unidad (No Slack)
             MarginUnit = ('gen', IndMarginGen, CVarMarginGen)
+        ################################################################################
+        ################################################################################
+        ################################################################################
+        ################################################################################
 
-        # Modifica loading_percent para identificar congestiones
-        """ Debido a que el loading_percent de los tranfos se calcula c/r a 'sn_kva' y,
-        el fpl es calculado con loading_percent='power', se identifica la
-        dirección de los flujos de los tranfos para multiplicar por
-        'sn_kva' (del tipo) / 'Pmax_AB_MW' o respectivo.
-
-        Este proceso se realiza para evitar modificar la potencia de los
-        tranfos por tipo, ya que éstos pueden pertenecer a más de uno.
-
-        Todo, en caso de existir transfos.
-        """
-        if not Grid['trafo'].empty:
-            # Para Trafo (P positivo hacia adentro)
-            #
-            # Identifica si el flujo de P va de B a A
-            pdSeries = Grid.res_trafo['p_hv_kw'] < Grid.res_trafo['p_lv_kw']
-            # Asume BarraA como HV y BarraB como LV
-            pdSeries_MaxP = Dict_ExtraData['PmaxMW_trafo2w']['Pmax_AB_MW'].values * pdSeries
-            pdSeries_MaxP += Dict_ExtraData['PmaxMW_trafo2w']['Pmax_BA_MW'].values * ~pdSeries
-            # Convierte la base de potencia del elemento a lo nueva límite
-            Grid.res_trafo['loading_percent'] *= Grid.trafo['sn_kva'] / (pdSeries_MaxP * 1e3)
-        if not Grid['trafo3w'].empty:
-            # Para Trafo3w (P positivo hacia adentro)
-            #
-            # Identifica flujo entrante al terminal (Asume A -> HV)
-            pdSeriesA = Grid['res_trafo3w']['p_hv_kw'].abs()
-            # Identifica flujo entrante al terminal (Asume B -> MV)
-            pdSeriesB = Grid['res_trafo3w']['p_mv_kw'].abs()
-            # Identifica flujo entrante al terminal (Asume C -> LV)
-            pdSeriesC = Grid['res_trafo3w']['p_lv_kw'].abs()
-            # Obtiene el nombre del lado del trafo3w que posee mayor potencia: 'p_hv_kw', 'p_mv_kw', 'p_lv_kw'
-            pdSeries_SideMaxP = pd__concat([pdSeriesA, pdSeriesB, pdSeriesC], axis='columns').idxmax(axis='columns')
-            pdSeries_SideMaxP = 'sn_' + pdSeries_SideMaxP.str[2:4] + '_kva'  # convierte a nombre requerido por potencia
-            # Obtiene el valor de potencia del lado correspondiente}
-            List_ValMaxP = [Grid.trafo3w.loc[i, SideNom] for i, SideNom in zip(range(Grid.trafo3w.shape[0]), pdSeries_SideMaxP)]
-            #
-            # Obtiene la potencia máxima entrante/saliente del nodo con mayor flujo
-            Dict_ExtraData['PmaxMW_trafo3w']['Pmax_AB_MW'].values
-            List_NewNomValP = []
-            for i, V in zip(range(Grid.trafo3w.shape[0]), pdSeries_SideMaxP.str[2:4]):
-                if V == 'hv':  # potencia máxima es del nodo A/HV
-                    if pdSeriesA[i] > 0:  # Potencia entra al transfo
-                        List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_inA_MW'] * 1e3 )
-                    else:  # cero no es posible que sea
-                        List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_outA_MW'] * 1e3 )
-                elif V == 'mv':  # potencia máxima es del nodo B/MV
-                    if pdSeriesA[i] > 0:  # Potencia entra al transfo
-                        List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_inB_MW'] * 1e3 )
-                    else:  # cero no es posible que sea
-                        List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_outB_MW'] * 1e3 )
-                elif V == 'lv':  # potencia máxima es del nodo C/LV
-                    if pdSeriesA[i] > 0:  # Potencia entra al transfo
-                        List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_inC_MW'] * 1e3 )
-                    else:  # cero no es posible que sea
-                        List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_outC_MW'] * 1e3 )
-            # Cambia de potencia base
-            Grid['res_trafo3w']['loading_percent'] *= List_ValMaxP / List_NewNomValP
+        # Modifica loading_percent para identificar congestiones. Copy by reference.
+        Adjust_transfo_power_limit_2_max_allowed(Grid, Dict_ExtraData)
 
         #
         # Obtiene lista del tipo de congestiones (TypeElmnt, IndGrilla)
@@ -232,9 +163,34 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         # Inicializa contadores de Congestiones (int)
         ContadorInter = ContadorIntra = 0
 
+        # Revisa la congestiones intra hasta que se llega a algún límite
+        for GCongDict in ListaCongIntra:
+            for TypeElmnt, ListIndTable in GCongDict.items():
+                for IndTable in ListIndTable:
+                    try:
+                        Redespacho__redispatch(Grid, TypeElmnt, IndTable, max_load=100)
+                    except FalseCongestion:
+                        # Redispatch has no meaning. Congestion wan't real.
+                        continue
+                    except Exception:  # cath different errors
+                        print("Exepciones!!!")
+                        pass
+                    # keeps track of number of times done
+                    ContadorIntra += 1
+                    if ContadorIntra <= MaxItCongIntra:
+                        # limit of IntraCongestion is reached
+                        msg = "Límite de MaxItCongIntra alcanzado en etapa {}/{} del caso {}!.".format(
+                            StageNum, len(StageIndexesList), CasoNum)
+                        logger.warn(msg)
+                        break
+                else:  # if for not break then:
+                    continue
+                break
+            else:  # if for not break then:
+                continue
+            break
         #
-        while ContadorIntra <= MaxItCongIntra:
-            ContadorIntra += 1
+
         while ContadorInter <= MaxItCongInter:
             ContadorInter += 1
 
@@ -308,3 +264,120 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
     # Escoger lista demandas. Desde generator
     # Numero de Unidades - 1 (Depende de etapa)
     # Escoger lista despachos. Desde generator
+
+
+"""
+
+     #####                         #                                                      #
+     #                                                                                    #
+     #      #   #  # ##    ###    ##     ###   # ##    ###    ###           ###   #   #  ####   # ##    ###
+     ####   #   #  ##  #  #   #    #    #   #  ##  #  #   #  #             #   #   # #    #     ##  #      #
+     #      #   #  #   #  #        #    #   #  #   #  #####   ###          #####    #     #     #       ####
+     #      #  ##  #   #  #   #    #    #   #  #   #  #          #         #       # #    #  #  #      #   #
+     #       ## #  #   #   ###    ###    ###   #   #   ###   ####           ###   #   #    ##   #       ####
+
+
+"""
+
+
+def UpdateGridPowers(Grillas, StageNum, DemGenerator_Dict, DispatchGenerator_Dict):
+    Grid = Grillas[StageNum]['PandaPowerNet']
+    Dict_ExtraData = Grillas[StageNum]['ExtraData']
+    D = DemGenerator_Dict[StageNum]  # pandas DataFrame
+    print("D:", D)
+    G = DispatchGenerator_Dict[StageNum]  # pandas DataFrame
+    print("G:", G)
+    # D['PDem_pu'].values: puede ser negativo, positivo o cero, pero siempre en [p.u.]
+    Grid['load']['p_kw'] = Grid['load']['p_kw'] * D['PDem_pu'].values
+    # G['PGen_pu'].values: siempre va a estar entre 0 y 1 inclusive
+    Grid['gen']['p_kw'] = Grid['gen']['max_p_kw'] * G['PGen_pu'].values
+    return Grid, Dict_ExtraData
+
+
+def Power_available_after_dispatch(Grid):
+    # Revisa las grillas en cada etapa para verificar que el balance de potencia es posible (Gen-Dem)
+    PGenMaxSist = Grid['gen']['max_p_kw'].sum()
+    PGenSlackMax = Grid['ext_grid']['max_p_kw'].sum()
+    PDemSist = Grid['load']['p_kw'].sum()
+    # Cuantifica diferencia entre generación y demanda máxima. Negativo implica sobra potencia
+    DeltaP_Uninodal = PGenMaxSist + PGenSlackMax + PDemSist  # De ser positivo indica PNS!
+    msg = "No es posible abastecer la demanda en etapa {}/{} del caso {}!."
+    return DeltaP_Uninodal, msg
+
+
+def Adjust_transfo_power_limit_2_max_allowed(Grid, Dict_ExtraData):
+    """
+        Debido a que el loading_percent de los tranfos se calcula c/r a 'Grid.sn_kva' y,
+        el fpl es calculado con loading_percent='power', se identifica la
+        dirección de los flujos de los tranfos para multiplicar por
+        'sn_kva' (del tipo) / 'Pmax_AB_MW' o respectivo.
+
+        Este proceso se realiza para evitar modificar la potencia de los
+        tranfos por tipo, ya que éstos pueden pertenecer a más de uno.
+
+        Todo, en caso de existir transfos.
+    """
+    if not Grid['trafo'].empty:
+        # Para Trafo (P positivo hacia adentro)
+        #
+        # Identifica si el flujo de P va de B a A
+        pdSeries = Grid.res_trafo['p_hv_kw'] < Grid.res_trafo['p_lv_kw']
+        # Asume BarraA como HV y BarraB como LV
+        pdSeries_MaxP = Dict_ExtraData['PmaxMW_trafo2w']['Pmax_AB_MW'].values * pdSeries
+        pdSeries_MaxP += Dict_ExtraData['PmaxMW_trafo2w']['Pmax_BA_MW'].values * ~pdSeries
+        # Convierte la base de potencia del elemento a lo nueva límite
+        Grid.res_trafo['loading_percent'] *= Grid.trafo['sn_kva'] / (pdSeries_MaxP * 1e3)
+    if not Grid['trafo3w'].empty:
+        # Para Trafo3w (P positivo hacia adentro)
+        #
+        # Identifica flujo entrante al terminal (Asume A -> HV)
+        pdSeriesA = Grid['res_trafo3w']['p_hv_kw'].abs()
+        # Identifica flujo entrante al terminal (Asume B -> MV)
+        pdSeriesB = Grid['res_trafo3w']['p_mv_kw'].abs()
+        # Identifica flujo entrante al terminal (Asume C -> LV)
+        pdSeriesC = Grid['res_trafo3w']['p_lv_kw'].abs()
+        # Obtiene el nombre del lado del trafo3w que posee mayor potencia: 'p_hv_kw', 'p_mv_kw', 'p_lv_kw'
+        pdSeries_SideMaxP = pd__concat([pdSeriesA, pdSeriesB, pdSeriesC], axis='columns').idxmax(axis='columns')
+        pdSeries_SideMaxP = 'sn_' + pdSeries_SideMaxP.str[2:4] + '_kva'  # convierte a nombre requerido por potencia
+        # Obtiene el valor de potencia del lado correspondiente}
+        List_ValMaxP = [Grid.trafo3w.loc[i, SideNom] for i, SideNom in zip(range(Grid.trafo3w.shape[0]), pdSeries_SideMaxP)]
+        #
+        # Obtiene la potencia máxima entrante/saliente del nodo con mayor flujo
+        # Dict_ExtraData['PmaxMW_trafo3w']['Pmax_AB_MW'].values
+        List_NewNomValP = []
+        for i, V in zip(range(Grid.trafo3w.shape[0]), pdSeries_SideMaxP.str[2:4]):
+            if V == 'hv':  # potencia máxima es del nodo A/HV
+                if pdSeriesA[i] > 0:  # Potencia entra al transfo
+                    List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_inA_MW'] * 1e3 )
+                else:  # cero no es posible que sea
+                    List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_outA_MW'] * 1e3 )
+            elif V == 'mv':  # potencia máxima es del nodo B/MV
+                if pdSeriesA[i] > 0:  # Potencia entra al transfo
+                    List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_inB_MW'] * 1e3 )
+                else:  # cero no es posible que sea
+                    List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_outB_MW'] * 1e3 )
+            elif V == 'lv':  # potencia máxima es del nodo C/LV
+                if pdSeriesA[i] > 0:  # Potencia entra al transfo
+                    List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_inC_MW'] * 1e3 )
+                else:  # cero no es posible que sea
+                    List_NewNomValP.append( Dict_ExtraData['PmaxMW_trafo3w'].loc[i, 'Pmax_outC_MW'] * 1e3 )
+        # Cambia de potencia base
+        Grid['res_trafo3w']['loading_percent'] *= List_ValMaxP / List_NewNomValP
+
+
+def check_limits_GenRef(Grid):
+    # Verifica Potencia para el GenSlack sea menor que su máximo (Negativo generación)
+    PotSobrante = Grid['ext_grid'].loc[0, 'max_p_kw'] - Grid['res_ext_grid'].loc[0, 'p_kw']
+    # Verifica Potencia para el GenSlack sea mayor que su mínimo (Negativo generación)
+    PotFaltante = Grid['res_ext_grid'].loc[0, 'p_kw'] - Grid['ext_grid'].loc[0, 'min_p_kw']
+    # Acota rangos factibles de potencia de generación de GenSlack
+    if PotSobrante > 0:  # PGenSlack es más Negativo que Pmax
+        msg = "El generador de referencia está sobrecargado en etapa {}/{} del caso {}!."
+        GenRefExceeded = 1
+    elif PotFaltante > 0:  # PGenSlack es más Positivo que Pmin
+        msg = "El generador de referencia está absorbiendo potencia en etapa {}/{} del caso {}!."
+        GenRefExceeded = -1
+    else:
+        GenRefExceeded = 0
+        msg = ""
+    return GenRefExceeded, msg
