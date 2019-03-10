@@ -12,8 +12,9 @@ from numpy.linalg import cond
 from numpy import round as np__round, ones as np__ones, real as np__real
 from numpy import flatnonzero as np__flatnonzero, r_ as np__r_
 from numpy import arange as np__arange, array as np__array, sign as np__sign
-from numpy import uint8, uint32, uint64
+from numpy import uint8, uint32, uint64, int8, int32, int64
 from numpy import repeat as np__repeat, unique as np__unique
+from numpy import nonzero as np__nonzero, isnan as np__isnan
 
 # custom module
 try:    # try importing locally when run independently
@@ -74,11 +75,11 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100):
     Bbus, Bpr, Amat = make_Bbus_Bpr_A(Grid)  # Grid must had previos power flow calculation
     # Get index of reference busbar (external grid)
     RefBus = Grid.ext_grid.at[0, 'bus']  # only first index allowed. For now. TODO: convert others to gen. choose one.
+    RefBusMatIndx = np__nonzero(Grid.bus.index == RefBus)[0][0]  # index of RefBus within Grid.bus.index. First value match
     # Get the dict of list of indices (for relationship with Bpr and Amat)
     IndxBrnchElmnts = IndOfBranchElmnt(Grid)
-    # print("IndxBrnchElmnts:", IndxBrnchElmnts)
     # Calculate GSDF matrix factors (uses aproximation for really small numbers)
-    GSDFmat = Calc_Factor_GSDF(Bbus, Bpr, Amat, RefBus, CondMat=True, decs=14)
+    GSDFmat = Calc_Factor_GSDF(Bbus, Bpr, Amat, RefBusMatIndx, CondMat=True, decs=14)
     # Calculate GGDF and Generation Utilizatión matrix factors (uses aproximation for really small numbers)
     GGDFmat, FUPTG, GenIndx2BusIndx, IndGenRef_GBusMat = Calc_Factor_GGDF(Grid,
                                                                           GSDFmat,
@@ -88,23 +89,19 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100):
 
     # Get the row of the branch of interest from matrices (according to IndxBrnchElmnts and input argument)
     TheRowBrnchIndMat = IndxBrnchElmnts[TypeElmnt][BranchIndTable]  # asume elementos de tabla ordenados secuencialmente según tablas Grid
-    # print("TheRowBrnchIndMat:", TheRowBrnchIndMat)
     ### (Por ahora) Uses FUPTG to determine the most and least participation generators on line flow
     # Obtiene el máximo y el mínimo de fila de la rama en cuestión
     RowValues = FUPTG[TheRowBrnchIndMat, :]
 
     # identifica valores del más al menos influyente en valor absoluto
     IndxSorted = abs(RowValues).argsort()[::-1]  # [::-1] is reversed
-    # print("IndxSorted:", IndxSorted)
 
     # calcula la potencia sobrante
-    ExtraPowerkW, loading_percent = power_over_congestion(Grid,
+    OverloadP_kW, loading_percent = power_over_congestion(Grid,
                                                           TypeElmnt,
                                                           BranchIndTable,
                                                           max_load_percent)
-    # print("ExtraPowerkW:", ExtraPowerkW)
-    # print("loading_percent:", loading_percent)
-    if ExtraPowerkW <= 0:
+    if (OverloadP_kW <= 0) :  # & (loading_percent < max_load_percent) ?
         # here catch negative o zero value "DiffPower"
         msg = "Branch '{}' wasn't really congested ({:.4f} %)".format(TypeElmnt, loading_percent)
         logger.error(msg)
@@ -129,7 +126,7 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100):
             # calculates delta power available to reduce
             DeltaPAvail_kW = CurrentPowerkW - LimitekW
             # calculate new power to give to generator
-            NewPowerkW = DeltaPAvail_kW - ExtraPowerkW
+            NewPowerkW = DeltaPAvail_kW - OverloadP_kW
 
         else:   # This generator should increase it's power (FUPTG < 0)
             LimitekW = abs(Grid['gen'].at[IndxGenGrid, 'max_p_kw'])
@@ -137,30 +134,25 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100):
             # calculates delta power available to increase
             DeltaPAvail_kW = LimitekW - CurrentPowerkW
             # calculate new power to give to generator
-            NewPowerkW = DeltaPAvail_kW - ExtraPowerkW
+            NewPowerkW = DeltaPAvail_kW - OverloadP_kW
 
         if DeltaPAvail_kW <= 0 :  # is it possible?
             # no power available to reduce in this generator
             continue
         elif NewPowerkW < 0:
             # generator should reduce more than available
-            ExtraPowerkW -= DeltaPAvail_kW
+            OverloadP_kW -= DeltaPAvail_kW
             NewPowerkW = LimitekW
         else:  # NewPowerkW >= 0
-            ExtraPowerkW -= DeltaPAvail_kW
+            OverloadP_kW -= DeltaPAvail_kW
         Grid['gen'].at[IndxGenGrid, 'p_kw'] = -NewPowerkW
 
-        # print("LimitekW", LimitekW)
-        # print("CurrentPowerkW", CurrentPowerkW)
-        # print("DeltaPAvail_kW", DeltaPAvail_kW)
-        # print("NewPowerkW", NewPowerkW)
-        # print("ExtraPowerkW:", ExtraPowerkW)
         # determina condición de salida. O que se acaben los generadores
-        if ExtraPowerkW <= 0:
+        if OverloadP_kW <= 0:
             break
         count += 1  # helps keep track of Indices_GridGen
     else:  # if not break for loop
-        if ExtraPowerkW > 0:
+        if OverloadP_kW > 0:
             msg = "Not enought power available on generators to stop congestion."
             logger.error(msg)
             raise CapacityOverloaded(msg)
@@ -176,7 +168,7 @@ def make_Bbus_Bpr_A(Grid):
 
     Grid must have '_ppc' key, either by power flow or converter.to_ppc
 
-    returns Bbus, Bpr, IncidenceMatrix (# -1: enter. +1: leave.)
+    returns Bbus, Bpr, IncidenceMatrix  # (-1: enter. +1: leave.)
     """
     ## check that power flow was run before
     if not Grid.converged:
@@ -244,7 +236,7 @@ def IndOfBranchElmnt(Grid):
     return Dict_salida
 
 
-def Calc_Factor_GSDF(Bbus, Bpr, IncidenceMat, RefBus, CondMat=False, decs=10):
+def Calc_Factor_GSDF(Bbus, Bpr, IncidenceMat, RefBusMatIndx, CondMat=False, decs=10):
     """
         Calcula la matriz GSDF a partir de:
 
@@ -255,16 +247,15 @@ def Calc_Factor_GSDF(Bbus, Bpr, IncidenceMat, RefBus, CondMat=False, decs=10):
         Incidence matrix (IncidenceMat) has to represent (-1 entering node
         and +1 for exiting), with dimensions branches x nodes. Csr_sparse matrix
 
-        RefBus: Integer index of bus reference (external grid bus.). By definition can only be one.
+        RefBusMatIndx: Integer index of the pandapower net bus index (external grid bus.). By previous definition can only be one.
 
         CondMat: Flag booleano para detectar condicionamiento de matriz Bbus.toarray()
 
         decs: número entero de decimales a aproximar valores de matriz retornada.
 
     """
-    # if RefBus != int(RefBus):
-    if not isinstance(RefBus, (int, uint8, uint32, uint64)):
-        msg = "RefBus bus be an integer representing the index of a pandapower net bus."
+    if not isinstance(RefBusMatIndx, (int, uint8, uint32, uint64, int8, int32, int64)):
+        msg = "RefBusMatIndx bus be an integer representing the index of the RefBus index of a pandapower net bus."
         logger.error(msg)
         raise ValueError(msg)
     NNodes = Bbus.shape[0]  # Bbus must be squared
@@ -272,11 +263,10 @@ def Calc_Factor_GSDF(Bbus, Bpr, IncidenceMat, RefBus, CondMat=False, decs=10):
     Bpr = Bpr.tocsr()
     IncidenceMat = IncidenceMat.tocsr()
     Bbus = Bbus.tocsr()
-    # get indices of first stack of non reference buses
-    # NonRefBuses = list(set(range(Bbus.shape[0])) - {RefBus})
-    FrstStackNRef = np__array(range(0, RefBus))
+    ###########################
+    FrstStackNRef = np__array(range(0, RefBusMatIndx))
     # get indices of second stack of non reference buses
-    ScndStackNRef = np__array(range(RefBus + 1, NNodes))
+    ScndStackNRef = np__array(range(RefBusMatIndx + 1, NNodes))
     # list of non ref buses
     NonRefBuses = np__r_[FrstStackNRef, ScndStackNRef]
     # Remove row and column from Bbus to invert
@@ -378,6 +368,19 @@ def Calc_Factor_GGDF(Grid, GSDF, RefBus, decs=10, FUTP_cf=True):
 
     # Calculates "Factores de Utilización por Tramo de Generación"
     FUPTG = Calc_FUTP_gen(GGDF, GenBus_mat, Gmat, F_ik, FUTP_cf, decs = decs)
+    if np__isnan(FUPTG).any():
+        import numpy as np
+        np.set_printoptions(linewidth=20000, threshold=2000)
+        print("GGDF.A:\n", GGDF.A)
+        print("GGDF.shape:\n", GGDF.shape)
+        print("Gmat.A:\n", Gmat.A)
+        print("Gmat.shape:\n", Gmat.shape)
+        print("Grid._pd2ppc_lookups:", Grid._pd2ppc_lookups)
+
+        print("Grid:\n", Grid)
+        print("Grid.bus:\n", Grid.bus)
+        # print("Grid:\n", Grid)
+        import pdb; pdb.set_trace()  # breakpoint 81a312e5 //
     return GGDF, FUPTG, GenIndx2BusIndx, IndGenRef_GBusMat
 
 
@@ -414,7 +417,6 @@ def Calc_FUTP_gen(GGDFmat, GenBus_mat, Gmat, F_ik, cf=True, decs = 10):
                 GGDFmat_cf[row, col] = 0
             else:
                 GGDFmat_cf[row, col] = data
-        # print("GGDFmat_cf.A:\n", GGDFmat_cf.A)
         GGDFmat = GGDFmat_cf.tocsr()
 
     # En caso de haberse modificado GGDFmat con cf=True,
@@ -424,8 +426,10 @@ def Calc_FUTP_gen(GGDFmat, GenBus_mat, Gmat, F_ik, cf=True, decs = 10):
     # Amplia vector columna PTG al número de columnas de FUPT (Ngen)
     PTG_mat = np__repeat(PTG, GenBus_mat.shape[1], axis= 1)  # recordar GenBus_mat (branch x Ngen)
     # Calcula los "Factores de Utilización por Tramo de generación"
+    print("PTG_mat:\n", PTG_mat)
     FUPT = (GGDFmat @ GenBus_mat).toarray() / PTG_mat
     FUPT = np__round(FUPT, decs)  # approximate values to avoid numerical errors
+    print("FUPT:\n", FUPT)
     return FUPT
 
 
@@ -456,15 +460,16 @@ def sum_rows(A, rows='all'):
 
 def power_over_congestion(Grid, TypeElmnt, BranchIndTable, max_load_percent):
     """ Calculates delta power over from max power expected under the max_load_percent.
-        Increases ExtraPowerkW in 5% over max power branch limit.
-    Returns (ExtraPowerkW, loading_percent)
+        Increases OverloadP_kW in 5% over max power branch limit.
+    Returns (OverloadP_kW, loading_percent)
     """
+    # FLUJO DE LINEA CAMBIA SIGNO. Absolute values requiered
     loading_percent = Grid['res_' + TypeElmnt].at[BranchIndTable, 'loading_percent']
-    FluPCongkW = Grid['res_' + TypeElmnt].at[BranchIndTable, 'p_from_kw']
-    MaxFluPkW = FluPCongkW * max_load_percent / loading_percent
-    ExtraPowerkW = FluPCongkW - MaxFluPkW
-    ExtraPowerkW += MaxFluPkW * (0.05)  # increase 5% for fpl error
-    return ExtraPowerkW, loading_percent
+    FluPAB_kW = abs(Grid['res_' + TypeElmnt].at[BranchIndTable, 'p_from_kw'])  # da igual dirección (signo)
+    MaxFluP_kW = FluPAB_kW * max_load_percent / loading_percent  # >= 0
+    OverloadP_kW = FluPAB_kW - MaxFluP_kW
+    OverloadP_kW += MaxFluP_kW * (0.05)  # increase 5% to compensate fpl error
+    return OverloadP_kW, loading_percent
 
 
 if __name__ == '__main__':
@@ -479,6 +484,3 @@ if __name__ == '__main__':
     redispatch(Grid, 'line', 0, max_load_percent = 0.08)
     # redispatch(Grid, 'line', 0, max_load_percent = 2.8)
     pp.rundcpp(Grid)
-    # print(Grid.res_gen)
-    # print(Grid.res_ext_grid)
-    # print(Grid.res_line)

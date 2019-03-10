@@ -10,12 +10,15 @@ from os import sep as os__sep
 from pandapower import from_pickle as pp__from_pickle
 from pandapower import select_subnet as pp__select_subnet
 from pandapower.topology import connected_components as pp__topology__connected_components
+from pandapower.idx_brch import BR_R, BR_X, PF
+from pandapower.idx_bus import VA
 from pandas import DataFrame as pd__DataFrame
 from pandas import concat as pd__concat
+from numpy import cos as np__cos, real as np__real
 # from smcfpl.aux_funcs import overloaded_trafo2w as aux_smcfpl__overloaded_trafo2w
 # from smcfpl.aux_funcs import overloaded_trafo3w as aux_smcfpl__overloaded_trafo3w
 from smcfpl.aux_funcs import TipoCong as aux_funcs__TipoCong
-from smcfpl.Redespacho import redispatch as Redespacho__redispatch
+from smcfpl.Redespacho import redispatch as Redespacho__redispatch, make_Bbus_Bpr_A as Redespacho__make_Bbus_Bpr_A
 from smcfpl.smcfpl_exceptions import *
 
 
@@ -158,7 +161,6 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         # Obtiene lista del tipo de congestiones (TypeElmnt, IndGrilla)
         ListaCongInter, ListaCongIntra = aux_funcs__TipoCong(Grid, max_load=100)
 
-        import pdb; pdb.set_trace()  # breakpoint 49a4976c //
         #
         # Inicializa contadores de Congestiones (int)
         ContadorInter = ContadorIntra = 0
@@ -168,13 +170,15 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             for TypeElmnt, ListIndTable in GCongDict.items():
                 for IndTable in ListIndTable:
                     try:
-                        Redespacho__redispatch(Grid, TypeElmnt, IndTable, max_load=100)
-                    except FalseCongestion:
-                        # Redispatch has no meaning. Congestion wan't real.
+                        Redespacho__redispatch(Grid, TypeElmnt, IndTable, max_load_percent=100)
+                    except (FalseCongestion, CapacityOverloaded):
+                        # Redispatch has no meaning. Congestion wan't real. Or
+                        # Generator limits can't hadle congestion
                         continue
-                    except Exception:  # cath different errors
+                    except Exception as e:  # cath other different errors
                         print("Exepciones!!!")
-                        pass
+                        print(e)
+                        import pdb; pdb.set_trace()  # breakpoint cb41466d //
                     # keeps track of number of times done
                     ContadorIntra += 1
                     if ContadorIntra <= MaxItCongIntra:
@@ -189,7 +193,6 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             else:  # if for not break then:
                 continue
             break
-        #
 
         while ContadorInter <= MaxItCongInter:
             ContadorInter += 1
@@ -204,6 +207,9 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
 
         #
         # Calcula pérdidas por flujo de líneas
+        PLoss = estimates_power_losses(Grid, method='linear')
+        PLoss = estimates_power_losses(Grid, method='cosine')
+        # print("PLoss:\n", PLoss)
 
     print("----------------------------")
     print("Este fue CasoNum:", CasoNum)
@@ -284,9 +290,9 @@ def UpdateGridPowers(Grillas, StageNum, DemGenerator_Dict, DispatchGenerator_Dic
     Grid = Grillas[StageNum]['PandaPowerNet']
     Dict_ExtraData = Grillas[StageNum]['ExtraData']
     D = DemGenerator_Dict[StageNum]  # pandas DataFrame
-    print("D:", D)
+    # print("D:", D)
     G = DispatchGenerator_Dict[StageNum]  # pandas DataFrame
-    print("G:", G)
+    # print("G:", G)
     # D['PDem_pu'].values: puede ser negativo, positivo o cero, pero siempre en [p.u.]
     Grid['load']['p_kw'] = Grid['load']['p_kw'] * D['PDem_pu'].values
     # G['PGen_pu'].values: siempre va a estar entre 0 y 1 inclusive
@@ -381,3 +387,44 @@ def check_limits_GenRef(Grid):
         GenRefExceeded = 0
         msg = ""
     return GenRefExceeded, msg
+
+
+def estimates_power_losses(net, method='linear'):
+    """
+    Computes de approximate power losses of each line
+    method can be,
+        - 'linear': Makes an estimate of linear power losses of the operation point according to p.u. resistance and power flow of each branch.
+        - 'cosine': Makes a cosinoidal estimattion of power losses (non-linear).
+    Returns Power Losses of dimensions: Rx1
+    """
+    Data = np__real( net._ppc['branch'][:, [PF, BR_R, BR_X]] )
+    Z_branches = Data[:, 1] + 1j * Data[:, 2]
+    F_ik = Data[:, [0]]  # power [MW] inyected from 'from_bus' to branch
+    if method == 'linear':
+        """ Low error is achived when R < 0.25 X per branch.
+                PLos = r * F_ik**2
+        Arguments:
+            F_ik (2D array of R branches by 1 column)
+            Z_branches (2D array of 1 row by R branches)
+        """
+        R_vector = np__real(Z_branches).T
+        # [R_vector]{1xR} * [F_ik]{Rx1} ^ 2
+        return (R_vector * (F_ik ** 2)[:, 0]).T
+    elif method == 'cosine':
+        """ Computes cosine aproximation.
+        PLoss = 2 * G * (1 - cos(delta_i-delta_j))
+        Arguments:
+            F_ik (2D array of R branches by one column)
+            Z_branches (2D array of one row by R branches)
+            IncidenceMat (2D array of R rows by N nodes)
+            DeltaBarra (2D array of N nodes by 1 column). Results of power flow calculation
+        """
+        Bbus, Bpr, A = Redespacho__make_Bbus_Bpr_A(net)  # from linear power flow (no Resistance in B)
+        G_vector = np__real(1 / Z_branches).T  # inverse of each value. Requieres resitance not to be Susceptance.
+        DeltaBarra = net._ppc['bus'][:, [VA]]  # these should real values
+        # PLoss = 2 * [G_vector]{1xR} * (1 - cos( [IncidenceMat]{RxN}* [DeltaBarra]{Nx1}))
+        return 2 * G_vector.T * np__cos( IncidenceMat * DeltaBarra ).T
+    else:
+        msg = "method '{}' is no available yet.".format(method)
+        logger.error(msg)
+        raise ValueError(msg)

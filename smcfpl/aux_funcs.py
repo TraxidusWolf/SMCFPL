@@ -114,7 +114,7 @@ def Lista2DF_consecutivo(Lista, incremento, NombreColumnas):
         1   21   33
         2   34   45
     """
-    logger.debug("! entrando en función: 'Lista2DF_consecutivo' (aux_funcs.py) ...")
+    # logger.debug("! entrando en función: 'Lista2DF_consecutivo' (aux_funcs.py) ...")
     LAux = []
     for IndElmn in range(len(Lista) - 1):
         if IndElmn == 0:
@@ -122,7 +122,7 @@ def Lista2DF_consecutivo(Lista, incremento, NombreColumnas):
         else:
             LAux.append( [ Lista[IndElmn] + incremento, Lista[IndElmn + 1] ] )
 
-    logger.debug("! saliendo en función: 'Lista2DF_consecutivo' (aux_funcs.py) ...")
+    # logger.debug("! saliendo en función: 'Lista2DF_consecutivo' (aux_funcs.py) ...")
     return pd__DataFrame(data=LAux, columns=NombreColumnas)
 
 

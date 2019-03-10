@@ -2,7 +2,7 @@ from smcfpl.in_out_files import read_sheets_to_dataframes as smcfpl__in_out_file
 from smcfpl.in_out_files import ImprimeBDsGrales as smcfpl__in_out_files__ImprimeBDsGrales
 from smcfpl.in_out_files import imprimeBDsCaso as smcfpl__in_out_files__imprimeBDsCaso
 from os.path import exists as os__path__exists, isdir as os__path__isdir
-from os.path import abspath as os__path__abspath
+from os.path import abspath as os__path__abspath, isfile as os__path__isfile
 from os import makedirs as os__makedirs, getcwd as os__getcwd
 from os import listdir as os__listdir
 from os import sep as os__sep
@@ -22,8 +22,10 @@ from pandapower import create_load as pp__create_load, create_gen as pp__create_
 from pandapower import create_ext_grid as pp__create_ext_grid
 from pandapower.topology import unsupplied_buses as pp__topology__unsupplied_buses
 from pandapower import drop_inactive_elements as pp__drop_inactive_elements
-from pandapower import to_pickle as pp__to_pickle
+from pandapower import to_pickle as pp__to_pickle, from_pickle as pp__from_pickle
+from pickle import HIGHEST_PROTOCOL as pickle__HIGHEST_PROTOCOL, dump as pickle__dump, load as pickle__load
 from multiprocessing import cpu_count as mu__cpu_count, Pool as mu__Pool
+from smcfpl.smcfpl_exceptions import *
 import smcfpl.aux_funcs as aux_smcfpl
 import smcfpl.SendWork2Nodes as SendWork2Nodes
 import smcfpl.NucleoCalculo as NucleoCalculo
@@ -48,10 +50,11 @@ class Simulacion(object):
         paralelismo se aumentarán los requerimientos de memoria según la cantidad de tareas.
     """
 
-    def __init__(self, XLSX_FileName='', InFilePath='.', OutFilePath='.', Sbase_MVA=100, MaxItCongInter=1, MaxItCongIntra=1,
-                 FechaComienzo='2018-01-01 00:00', FechaTermino='2019-01-31 23:59', NumVecesDem=1,
-                 NumVecesGen=1, PerdCoseno=True, PEHidSeca=0.8, PEHidMed=0.5, PEHidHum=0.2, DesvEstDespCenEyS=0.1,
-                 DesvEstDespCenP=0.2, NumParallelCPU=False, UsaSlurm=False, Working_dir=os__getcwd(),
+    def __init__(self, XLSX_FileName='', InFilePath='.', OutFilePath='.', Sbase_MVA=100, MaxItCongInter=1,
+                 MaxItCongIntra=1, FechaComienzo='2018-01-01 00:00', FechaTermino='2019-01-31 23:59',
+                 NumVecesDem=1, NumVecesGen=1, PerdCoseno=True, PEHidSeca=0.8, PEHidMed=0.5, PEHidHum=0.2,
+                 DesvEstDespCenEyS=0.1, DesvEstDespCenP=0.2, NumParallelCPU=False, UsaSlurm=False,
+                 Working_dir=os__getcwd(), UseTempFolder = True, RemovePreTempData=True,
                  smcfpl_dir=os__getcwd(), TempFolderName='TempData' ):
         """
             :param UsaSlurm: Diccionario con parámetros para ejecución en el sistema de colas de slurm. Hace que se ejecuten comandos (con biblioteca subprocess) sbatch
@@ -68,6 +71,7 @@ class Simulacion(object):
         logger.debug("! inicializando clase Simulacion(...)  (CreaElementos.py)...")
         #
         # Atributos desde entradas
+        self.XLSX_FileName = XLSX_FileName  # (str)
         self.InFilePath = InFilePath    # (str)
         self.Sbase_MVA = Sbase_MVA  # (float)
         self.MaxItCongInter = MaxItCongInter    # (int)
@@ -87,76 +91,49 @@ class Simulacion(object):
         self.PEHidHum = PEHidHum    # 0 <= (float) <= 1
         self.DesvEstDespCenEyS = DesvEstDespCenEyS  # 0 <= (float) <= 1
         self.DesvEstDespCenP = DesvEstDespCenP  # 0 <= (float) <= 1
-        if (isinstance(NumParallelCPU, int)) | (NumParallelCPU is False) | (NumParallelCPU == 'Max'):
+        self.NumParallelCPU = NumParallelCPU  #
+        if not (isinstance(self.NumParallelCPU, int) | (self.NumParallelCPU is False) | (self.NumParallelCPU == 'Max')):
             # Puede ser False: No usa paralelismo ni lectura ni cálculo, 'Max' para todos los procesadores, o un 'int' tamaño personalizado pool
-            self.NumParallelCPU = NumParallelCPU  # (int)
-        else:
             msg = "Input 'NumParallelCPU' debe ser integer, False, o 'Max'."
             logger.error(msg)
             raise ValueError(msg)
         self.UsaSlurm = UsaSlurm  # (bool)
         self.Working_dir = Working_dir  # (str)
+        self.UseTempFolder = UseTempFolder  # (bool)
+        self.RemovePreTempData = RemovePreTempData  # (bool)
         self.TempFolderName = TempFolderName
         self.abs_path_temp = os__path__abspath(Working_dir + os__sep + TempFolderName)
         self.abs_path_smcfpl = os__path__abspath(smcfpl_dir)
         self.DirSalidas = os__path__abspath(OutFilePath)
         self.abs_InFilePath = os__path__abspath(InFilePath)
         self.abs_OutFilePath = os__path__abspath(OutFilePath)
+        self.BD_file_exists = False
 
-        FileName = XLSX_FileName
-        # lee archivos de entrada (dict of dataframes)
-        self.DFs_Entradas = smcfpl__in_out_files__read_sheets_to_dataframes(self.abs_InFilePath, FileName, NumParallelCPU)
-        # Determina duración de las etapas  (1-indexed)
-        self.BD_Etapas = Crea_Etapas( self.DFs_Entradas['df_in_smcfpl_mantbarras'],
-                                      self.DFs_Entradas['df_in_smcfpl_manttx'],
-                                      self.DFs_Entradas['df_in_smcfpl_mantgen'],
-                                      self.DFs_Entradas['df_in_smcfpl_mantcargas'],
-                                      self.DFs_Entradas['df_in_smcfpl_histsolar'],
-                                      self.DFs_Entradas['df_in_smcfpl_histeolicas'],
-                                      self.FechaComienzo,
-                                      self.FechaTermino)
+        # Verifies if it's necesary to import or calculate data. Added them to attributes
+        FileFormat = 'pickle'  # tipes of files to be read
+        _ReturnedBD = self.ManageTempData(FileFormat)
+        # BD_Etapas
+        # BD_DemProy
+        # BD_Hidrologias_futuras
+        # BD_TSFProy
+        # BD_MantEnEta
+        # BD_RedesXEtapa
+        # BD_ParamHidEmb
+        # BD_HistGenRenovable
+        # BD_seriesconf
+        self.BD_Etapas, self.BD_DemProy = _ReturnedBD[0], _ReturnedBD[1]
+        self.BD_Hidrologias_futuras, self.BD_TSFProy = _ReturnedBD[2], _ReturnedBD[3]
+        self.BD_MantEnEta, self.BD_RedesXEtapa = _ReturnedBD[4], _ReturnedBD[5]
+        self.BD_ParamHidEmb, self.BD_HistGenRenovable = _ReturnedBD[6], _ReturnedBD[7]
+        self.BD_seriesconf = _ReturnedBD[8]
+
+        if self.UseTempFolder and not self.BD_file_exists:
+            self.write_DataBases_to_pickle(self.abs_path_temp)
+
         print('self.BD_Etapas:', self.BD_Etapas)
         # Numero total de etapas
         self.NEta = self.BD_Etapas.shape[0]
-        #
-        # IDENTIFICA LA INFORMACIÓN QUE LE CORRESPONDE A CADA ETAPA (Siguiente BD son todas en etapas):
-        #
-        # Calcula y convierte valor a etapas de la desviación histórica de la demanda... (pandas Dataframe)
-        self.BD_DemSistDesv = aux_smcfpl.DesvDemandaHistoricaSistema_a_Etapa( self.DFs_Entradas['df_in_scmfpl_histdemsist'],
-                                                                              self.BD_Etapas)
-        # Obtiene y convierte la demanda proyectada a cada etapas... (pandas Dataframe)
-        self.BD_DemTasaCrecEsp = aux_smcfpl.TasaDemandaEsperada_a_Etapa( self.DFs_Entradas['df_in_smcfpl_proydem'],
-                                                                         self.BD_Etapas, self.FechaComienzo,
-                                                                         self.FechaTermino)
-        # Unifica datos de demanda anteriores por etapa (pandas Dataframe)
-        self.BD_DemProy = pd__concat([self.BD_DemTasaCrecEsp, self.BD_DemSistDesv.abs()], axis = 'columns')
-        # Almacena la PE de cada año para cada hidrología (pandas Dataframe)
-        self.BD_Hidrologias_futuras = aux_smcfpl.Crea_hidrologias_futuras( self.DFs_Entradas['df_in_smcfpl_histhid'],
-                                                                           self.BD_Etapas, self.PEHidSeca, self.PEHidMed,
-                                                                           self.PEHidHum, self.FechaComienzo, self.FechaTermino)
-        # Respecto a la base de datos 'in_smcfpl_ParamHidEmb' en self.DFs_Entradas['df_in_smcfpl_ParamHidEmb'], ésta es dependiente de hidrologías solamente
-        # Respecto a la base de datos 'in_smcfpl_seriesconf' en self.DFs_Entradas['df_in_smcfpl_seriesconf'], ésta define configuración hidráulica fija
-        # Almacena la TSF por etapa de las tecnologías (pandas Dataframe)
-        self.BD_TSFProy = aux_smcfpl.TSF_Proyectada_a_Etapa( self.DFs_Entradas['df_in_smcfpl_tsfproy'],
-                                                             self.BD_Etapas, self.FechaComienzo)
-        # Convierte los dataframe de mantenimientos a etapas dentro de un diccionario con su nombre como key
-        self.BD_MantEnEta = aux_smcfpl.Mantenimientos_a_etapas( self.DFs_Entradas['df_in_smcfpl_mantbarras'],
-                                                                self.DFs_Entradas['df_in_smcfpl_manttx'],
-                                                                self.DFs_Entradas['df_in_smcfpl_mantgen'],
-                                                                self.DFs_Entradas['df_in_smcfpl_mantcargas'],
-                                                                self.BD_Etapas)
-        # Por cada etapa crea el SEP correspondiente (...paralelizable...) (dict of pandaNetworks and extradata)
-        self.BD_RedesXEtapa = Crea_SEPxEtapa( self.DFs_Entradas['df_in_smcfpl_tecbarras'], self.DFs_Entradas['df_in_smcfpl_teclineas'],
-                                              self.DFs_Entradas['df_in_smcfpl_tectrafos2w'], self.DFs_Entradas['df_in_smcfpl_tectrafos3w'],
-                                              self.DFs_Entradas['df_in_smcfpl_tipolineas'], self.DFs_Entradas['df_in_smcfpl_tipotrafos2w'],
-                                              self.DFs_Entradas['df_in_smcfpl_tipotrafos3w'], self.DFs_Entradas['df_in_smcfpl_tecgen'],
-                                              self.DFs_Entradas['df_in_smcfpl_teccargas'], self.BD_MantEnEta, self.BD_Etapas, self.Sbase_MVA,
-                                              NumParallelCPU)
-        # print("self.BD_RedesXEtapa:", self.BD_RedesXEtapa)
-        self.BD_HistGenRenovable = aux_smcfpl.GenHistorica_a_Etapa(self.BD_Etapas,
-                                                                   self.DFs_Entradas['df_in_smcfpl_histsolar'],
-                                                                   self.DFs_Entradas['df_in_smcfpl_histeolicas'])
-        # print('self.BD_HistGenRenovable:', self.BD_HistGenRenovable)
+
         #
         # Obtiene partes del diccionario ExtraData por etapa
         self.TecGenSlack = [d['ExtraData']['TecGenSlack'] for d in self.BD_RedesXEtapa.values()]
@@ -168,7 +145,6 @@ class Simulacion(object):
         self.DictTiposGenNoSlack = { k: d['ExtraData']['Tipos'] for k, d in self.BD_RedesXEtapa.items() }
         # # Obtiene Grillas de cada etapa en diccionario (1-indexed)
         # self.DictSEPBrutoXEtapa = {k: v['PandaPowerNet'] for k, v in self.BD_RedesXEtapa.items()}
-
         logger.debug("! inicialización clase Simulacion(...) (CreaElementos.py) Finalizada!")
 
     def run(self, delete_TempData_post=True):
@@ -210,17 +186,19 @@ class Simulacion(object):
             # elif not os__path__exists(self.abs_path_temp):
             #     # verifica que exista directorio, de lo contrario lo crea.
             #     os__makedirs(self.abs_path_temp)
-            if os__path__exists(self.abs_path_temp):
-                # Si existe un directorio con el nombre del correspondiente temporal,
-                # se elimina con warning. Se asegura que no existan conflictos con datos antiguos
-                if self.UsaSlurm['borrar_cache_pre']:
-                    logger.warn("Eliminando directorio completo {}".format(self.TempFolderName))
-                    shutil__rmtree(self.abs_path_temp)
-                    # Crea el directorio temporal
-                    os__makedirs(self.abs_path_temp)
-            else:
-                # verifica que exista directorio, de lo contrario lo crea.
-                os__makedirs(self.abs_path_temp)
+            ##########################################################
+            # if os__path__exists(self.abs_path_temp):
+            #     # Si existe un directorio con el nombre del correspondiente temporal,
+            #     # se elimina con warning. Se asegura que no existan conflictos con datos antiguos
+            #     if self.UsaSlurm['borrar_cache_pre']:
+            #         logger.warn("Eliminando directorio completo {}".format(self.TempFolderName))
+            #         shutil__rmtree(self.abs_path_temp)
+            #         # Crea el directorio temporal
+            #         os__makedirs(self.abs_path_temp)
+            # else:
+            #     # verifica que exista directorio, de lo contrario lo crea.
+            #     os__makedirs(self.abs_path_temp)
+            ##########################################################
 
             # Imprime las  BDs generales a los distintos casos. Usa directorio temporal 'self.abs_path_temp'
             smcfpl__in_out_files__ImprimeBDsGrales(self)
@@ -255,7 +233,7 @@ class Simulacion(object):
                 # PEs por etapa asociadas a la Hidrología en cuestión
                 DF_PEsXEtapa = self.BD_Hidrologias_futuras[['PE ' + HidNom + ' dec']]
                 # Parámetros de cota-costo en hidrología actual. Indices: ['b', 'CVmin', 'CVmax', 'CotaMin', 'CotaMax']
-                DF_ParamHidEmb_hid = self.DFs_Entradas['df_in_smcfpl_ParamHidEmb'].loc[HidNom]  # Accede al DataFrame del DataFrame Multindex
+                DF_ParamHidEmb_hid = self.BD_ParamHidEmb.loc[HidNom]  # Accede al DataFrame del DataFrame Multindex
                 DF_CotasEmbalsesXEtapa = pd__DataFrame(np__tile(DF_PEsXEtapa, (1, len(DF_ParamHidEmb_hid.columns))),
                                                        columns = DF_ParamHidEmb_hid.columns,
                                                        index = DF_PEsXEtapa.index)
@@ -371,7 +349,7 @@ class Simulacion(object):
                 # PEs por etapa asociadas a la Hidrología en cuestión
                 DF_PEsXEtapa = self.BD_Hidrologias_futuras[['PE ' + HidNom + ' dec']]
                 # Parámetros de cota-costo en hidrología actual. Indices: ['b', 'CVmin', 'CVmax', 'CotaMin', 'CotaMax']
-                DF_ParamHidEmb_hid = self.DFs_Entradas['df_in_smcfpl_ParamHidEmb'].loc[HidNom]  # Accede al DataFrame del DataFrame Multindex
+                DF_ParamHidEmb_hid = self.BD_ParamHidEmb.loc[HidNom]  # Accede al DataFrame del DataFrame Multindex
                 DF_CotasEmbalsesXEtapa = pd__DataFrame(np__tile(DF_PEsXEtapa, (1, len(DF_ParamHidEmb_hid.columns))),
                                                        columns = DF_ParamHidEmb_hid.columns,
                                                        index = DF_PEsXEtapa.index)
@@ -405,7 +383,7 @@ class Simulacion(object):
                             Results.append( Pool.apply_async( NucleoCalculo.Calcular,
                                                               ( ContadorCasos, HidNom, self.BD_RedesXEtapa,
                                                                 self.BD_Etapas.index, DF_ParamHidEmb_hid,
-                                                                self.DFs_Entradas['df_in_smcfpl_seriesconf'],
+                                                                self.BD_seriesconf,
                                                                 self.MaxItCongInter, self.MaxItCongIntra,
                                                                 ),
                                                               # No se pueden pasar argumentos en generadores en paralelo
@@ -419,7 +397,7 @@ class Simulacion(object):
                             # (En serie) Aplica directamente para cada caso
                             Dict_Casos[IdentificadorCaso] = NucleoCalculo.Calcular( ContadorCasos, HidNom, self.BD_RedesXEtapa,
                                                                                     self.BD_Etapas.index, DF_ParamHidEmb_hid,
-                                                                                    self.DFs_Entradas['df_in_smcfpl_seriesconf'],
+                                                                                    self.BD_seriesconf,
                                                                                     self.MaxItCongInter, self.MaxItCongIntra,
                                                                                     self.abs_OutFilePath,
                                                                                     DemGenerator_Dict={k: v for k, v in PyGeneratorDemand},
@@ -436,6 +414,210 @@ class Simulacion(object):
                     Dict_Casos[IdentificadorCaso] = result.get()
 
         logger.debug("Corrida método Simulacion.run() finalizada!")
+
+    def ManageTempData(self, FileFormat):
+        """ Manage the way to detect temp folder, in order to create temporarly files if requested or create them from scratch.
+
+            Returns tuple of all databases requiered.
+        """
+        if self.UseTempFolder:
+            if os__path__isdir(self.abs_path_temp):
+                if self.RemovePreTempData:
+                    try:
+                        # remove temp folder and all it's contents
+                        shutil__rmtree(self.abs_path_temp)
+                        logger.warn("Eliminando directorio completo {}".format(self.TempFolderName))
+                    except Exception:
+                        logger.warn("Directory '{}' doesn't exists... New one created.".format(self.TempFolderName))
+                    # create temporarly folder
+                    os__makedirs(self.abs_path_temp)
+            else:
+                os__makedirs(self.abs_path_temp)
+            if self.check_for_DataBases_in_temp_folder(self.abs_path_temp, formatFile=FileFormat):
+                msg = "BataBases files exist within temp Data folder."
+                logger.info(msg)
+                self.BD_file_exists = True
+                return self.import_DataBases_from_folder(self.abs_path_temp, formatFile=FileFormat)
+            else:
+                return self.Create_DataBases()
+        else:
+            return self.Create_DataBases()
+
+    def check_for_DataBases_in_temp_folder(self, abs_path_folder, formatFile='pickle'):
+        """ Checks for the folowwing databases to exist within abs_path_folder:
+                    BD_Etapas.p
+                    BD_DemProy.p
+                    BD_Hidrologias_futuras.p
+                    BD_TSFProy.p
+                    BD_MantEnEta.p
+                    BD_RedesXEtapa.p
+                    BD_ParamHidEmb.p
+                    BD_HistGenRenovable.p
+                    BD_seriesconf.p
+            If at least one is missing, returns false.
+        """
+        Laux = []
+        Names2Look = ('BD_Etapas', 'BD_DemProy', 'BD_Hidrologias_futuras',
+                      'BD_TSFProy', 'BD_MantEnEta', 'BD_RedesXEtapa',
+                      'BD_ParamHidEmb', 'BD_HistGenRenovable', 'BD_seriesconf')
+        if formatFile == 'pickle':
+            postfix = 'p'
+        else:
+            raise IOError("'{}' format not implemented yet or des not exists.". format(formatFile))
+
+        for filename in Names2Look:
+            filename += '.{}'.format(postfix)
+            Laux.append( os__path__isfile(abs_path_folder + os__sep + filename) )
+        return all(Laux)
+
+    def import_DataBases_from_folder(self, abs_path_folder, formatFile='pickle'):
+        """ Import all Database files in abs_path_folder:
+                BD_Etapas.p
+                BD_DemProy.p
+                BD_Hidrologias_futuras.p
+                BD_TSFProy.p
+                BD_MantEnEta.p
+                BD_RedesXEtapa.p
+                BD_ParamHidEmb.p
+                BD_HistGenRenovable.p
+                BD_seriesconf.p
+            Return list with each database ordered as mentioned.
+        """
+        # initialize return list
+        Return_list = []
+        Names2Look = ('BD_Etapas', 'BD_DemProy', 'BD_Hidrologias_futuras',
+                      'BD_TSFProy', 'BD_MantEnEta', 'BD_RedesXEtapa',
+                      'BD_ParamHidEmb', 'BD_HistGenRenovable', 'BD_seriesconf')
+        if formatFile == 'pickle':
+            postfix = 'p'
+        else:
+            raise IOError("'{}' format not implemented yet or des not exists.". format(formatFile))
+
+        for name in Names2Look:
+            with open(abs_path_folder + os__sep + "{}.{}".format(name, postfix), 'rb') as f:
+                Return_list.append( pickle__load(f) )
+        return Return_list
+
+    def Create_DataBases(self):
+        """
+            Creates the Databases. These are store in memory while running.
+            Relevant Databases are:
+                BD_Etapas.p
+                BD_DemProy.p
+                BD_Hidrologias_futuras.p
+                BD_TSFProy.p
+                BD_MantEnEta.p
+                BD_RedesXEtapa.p
+                BD_ParamHidEmb
+                BD_HistGenRenovable.p
+                BD_seriesconf.p
+
+            Returns a list with all relevant databases, which are added to the ReturnList after creation.
+        """
+        # initialize return list
+        ReturnList = []
+        # lee archivos de entrada (dict of dataframes)
+        DFs_Entradas = smcfpl__in_out_files__read_sheets_to_dataframes(self.abs_InFilePath,
+                                                                       self.XLSX_FileName,
+                                                                       self.NumParallelCPU)  # only exists here
+        # Determina duración de las etapas  (1-indexed)
+        BD_Etapas = Crea_Etapas( DFs_Entradas['df_in_smcfpl_mantbarras'],
+                                 DFs_Entradas['df_in_smcfpl_manttx'],
+                                 DFs_Entradas['df_in_smcfpl_mantgen'],
+                                 DFs_Entradas['df_in_smcfpl_mantcargas'],
+                                 DFs_Entradas['df_in_smcfpl_histsolar'],
+                                 DFs_Entradas['df_in_smcfpl_histeolicas'],
+                                 self.FechaComienzo, self.FechaTermino)
+        ReturnList.append(BD_Etapas)
+
+        #
+        # IDENTIFICA LA INFORMACIÓN QUE LE CORRESPONDE A CADA ETAPA (Siguiente BD son todas en etapas):
+        #
+        # Calcula y convierte valor a etapas de la desviación histórica de la demanda... (pandas Dataframe)
+        BD_DemSistDesv = aux_smcfpl.DesvDemandaHistoricaSistema_a_Etapa( DFs_Entradas['df_in_scmfpl_histdemsist'],
+                                                                         BD_Etapas)
+        # Obtiene y convierte la demanda proyectada a cada etapas... (pandas Dataframe)
+        BD_DemTasaCrecEsp = aux_smcfpl.TasaDemandaEsperada_a_Etapa( DFs_Entradas['df_in_smcfpl_proydem'],
+                                                                    BD_Etapas, self.FechaComienzo,
+                                                                    self.FechaTermino)
+        # Unifica datos de demanda anteriores por etapa (pandas Dataframe)
+        BD_DemProy = pd__concat([BD_DemTasaCrecEsp, BD_DemSistDesv.abs()], axis = 'columns')
+        ReturnList.append(BD_DemProy)
+        # Almacena la PE de cada año para cada hidrología (pandas Dataframe)
+        BD_Hidrologias_futuras = aux_smcfpl.Crea_hidrologias_futuras( DFs_Entradas['df_in_smcfpl_histhid'],
+                                                                      BD_Etapas, self.PEHidSeca, self.PEHidMed,
+                                                                      self.PEHidHum, self.FechaComienzo, self.FechaTermino)
+        ReturnList.append(BD_Hidrologias_futuras)
+        # Respecto a la base de datos 'in_smcfpl_ParamHidEmb' en DFs_Entradas['df_in_smcfpl_ParamHidEmb'], ésta es dependiente de hidrologías solamente
+        # Respecto a la base de datos 'in_smcfpl_seriesconf' en DFs_Entradas['df_in_smcfpl_seriesconf'], ésta define configuración hidráulica fija
+        # Almacena la TSF por etapa de las tecnologías (pandas Dataframe)
+        BD_TSFProy = aux_smcfpl.TSF_Proyectada_a_Etapa( DFs_Entradas['df_in_smcfpl_tsfproy'],
+                                                        BD_Etapas, self.FechaComienzo)
+        ReturnList.append(BD_TSFProy)
+        # Convierte los dataframe de mantenimientos a etapas dentro de un diccionario con su nombre como key
+        BD_MantEnEta = aux_smcfpl.Mantenimientos_a_etapas( DFs_Entradas['df_in_smcfpl_mantbarras'],
+                                                           DFs_Entradas['df_in_smcfpl_manttx'],
+                                                           DFs_Entradas['df_in_smcfpl_mantgen'],
+                                                           DFs_Entradas['df_in_smcfpl_mantcargas'],
+                                                           BD_Etapas)
+        ReturnList.append(BD_MantEnEta)
+        # Por cada etapa crea el SEP correspondiente (...paralelizable...) (dict of pandaNetworks and extradata)
+        BD_RedesXEtapa = Crea_SEPxEtapa( DFs_Entradas['df_in_smcfpl_tecbarras'],
+                                         DFs_Entradas['df_in_smcfpl_teclineas'],
+                                         DFs_Entradas['df_in_smcfpl_tectrafos2w'],
+                                         DFs_Entradas['df_in_smcfpl_tectrafos3w'],
+                                         DFs_Entradas['df_in_smcfpl_tipolineas'],
+                                         DFs_Entradas['df_in_smcfpl_tipotrafos2w'],
+                                         DFs_Entradas['df_in_smcfpl_tipotrafos3w'],
+                                         DFs_Entradas['df_in_smcfpl_tecgen'],
+                                         DFs_Entradas['df_in_smcfpl_teccargas'],
+                                         BD_MantEnEta, BD_Etapas, self.Sbase_MVA,
+                                         self.NumParallelCPU)
+        ReturnList.append(BD_RedesXEtapa)
+        # print("BD_RedesXEtapa:", BD_RedesXEtapa)
+        BD_HistGenRenovable = aux_smcfpl.GenHistorica_a_Etapa(BD_Etapas,
+                                                              DFs_Entradas['df_in_smcfpl_histsolar'],
+                                                              DFs_Entradas['df_in_smcfpl_histeolicas'])
+        ReturnList.append(BD_HistGenRenovable)
+        # print("BD_HistGenRenovable:", BD_HistGenRenovable)
+        BD_ParamHidEmb = DFs_Entradas['df_in_smcfpl_ParamHidEmb']
+        ReturnList.append(BD_ParamHidEmb)
+        # print('BD_HistGenRenovable:', BD_HistGenRenovable)
+        BD_seriesconf = DFs_Entradas['df_in_smcfpl_seriesconf']
+        ReturnList.append(BD_seriesconf)
+        # print('BD_seriesconf:', BD_seriesconf)
+        return ReturnList
+
+    def write_DataBases_to_pickle(self, abs_path_temp, FileFormat='pickle'):
+        """ Write the folowwing databases into abs_path_temp folder in pickle format:
+                BD_Etapas.p
+                BD_DemProy.p
+                BD_Hidrologias_futuras.p
+                BD_TSFProy.p
+                BD_MantEnEta.p
+                BD_RedesXEtapa.p
+                BD_ParamHidEmb
+                BD_HistGenRenovable.p
+                BD_seriesconf.p
+        """
+        Names_Variables = { 'BD_Etapas': self.BD_Etapas,
+                            'BD_DemProy': self.BD_DemProy,
+                            'BD_Hidrologias_futuras': self.BD_Hidrologias_futuras,
+                            'BD_TSFProy': self.BD_TSFProy,
+                            'BD_MantEnEta': self.BD_MantEnEta,
+                            'BD_RedesXEtapa': self.BD_RedesXEtapa,
+                            'BD_HistGenRenovable': self.BD_HistGenRenovable,
+                            'BD_ParamHidEmb': self.BD_ParamHidEmb,
+                            'BD_seriesconf': self.BD_seriesconf,
+                            }
+        if FileFormat == 'pickle':
+            postfix = 'p'
+        else:
+            raise IOError("'{}' format not implemented yet or des not exists.". format(FileFormat))
+
+        for name, var in Names_Variables.items():
+            with open(abs_path_temp + os__sep + "{}.{}".format(name, postfix), 'wb') as f:
+                pickle__dump(var, f, pickle__HIGHEST_PROTOCOL)
 
 
 def Crea_Etapas(DF_MantBarras, DF_MantTx, DF_MantGen, DF_MantLoad, DF_Solar, DF_Eolicas, FechaComienzo, FechaTermino):
@@ -698,8 +880,11 @@ def Crea_SEPxEtapa( DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w,
     if not NumParallelCPU:
         for EtaNum, Etapa in DF_Etapas.iterrows():
             # print("EtaNum:", EtaNum)
-            Grid, ExtraData = CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w, DF_TipoLineas, DF_TipoTrafos2w,
-                                                     DF_TipoTrafos3w, DF_TecGen, DF_TecCargas, Dict_DF_Mantenimientos, EtaNum, Sbase_MVA, TotalEtas)
+            Grid, ExtraData = CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
+                                                     DF_TecTrafos3w, DF_TipoLineas, DF_TipoTrafos2w,
+                                                     DF_TipoTrafos3w, DF_TecGen, DF_TecCargas,
+                                                     Dict_DF_Mantenimientos, EtaNum, Sbase_MVA,
+                                                     TotalEtas)
             # Agrega información creada al DictSalida
             DictSalida[EtaNum] = {'PandaPowerNet': Grid}
             DictSalida[EtaNum]['ExtraData'] = ExtraData
@@ -716,9 +901,13 @@ def Crea_SEPxEtapa( DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w,
         for EtaNum, Etapa in DF_Etapas.iterrows():
             # Rellena el Pool con los tasks correspondientes
             Results.append( [
-                Pool.apply_async(CompletaSEP_PandaPower, (DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w, DF_TipoLineas,
-                                                          DF_TipoTrafos2w, DF_TipoTrafos3w, DF_TecGen, DF_TecCargas,
-                                                          Dict_DF_Mantenimientos, EtaNum, Sbase_MVA, TotalEtas)),
+                Pool.apply_async(CompletaSEP_PandaPower, (DF_TecBarras, DF_TecLineas,
+                                                          DF_TecTrafos2w, DF_TecTrafos3w,
+                                                          DF_TipoLineas,  DF_TipoTrafos2w,
+                                                          DF_TipoTrafos3w, DF_TecGen,
+                                                          DF_TecCargas, Dict_DF_Mantenimientos,
+                                                          EtaNum, Sbase_MVA, TotalEtas),
+                                 ),
                 EtaNum])
         # Obtiene los resultados del paralelismo y asigna a variables de interés
         for result, EtaNum in Results:
@@ -785,7 +974,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
         11.- Por cada Generador disponible crea el correspondiente elemento en la RED
         12.- Elimina los elementos del sistema en caso de quedan sin aislados (Sin conexión a Gen Ref) producto de mantención
 
-        Retorna una tupla con (PandaPower Grid filled, ExtraInfo)
+        Retorna una tupla con (PandaPower Grid filled, ExtraData)
     """
     logger.debug("! Creando SEP en etapa {}/{} ...".format(EtaNum, TotalEtas))
     #
@@ -1090,8 +1279,6 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
     ExtraData['PmaxMW_trafo3w'] = Trafo3wDisp[['Pmax_inA_MW', 'Pmax_outA_MW', 'Pmax_inB_MW', 'Pmax_outB_MW', 'Pmax_inC_MW', 'Pmax_outC_MW']]
     # potencia permitida por lineas 'line'
     ExtraData['PmaxMW_line'] = LinsDisp[['Pmax_AB_MW', 'Pmax_BA_MW']]
-
-    pp__to_pickle(Grid, 'Grilla_Eta' + str(EtaNum) + '.p')
 
     logger.debug("! SEP en etapa {}/{} creado.".format(EtaNum, TotalEtas))
 

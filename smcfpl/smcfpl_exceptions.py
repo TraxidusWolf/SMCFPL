@@ -16,3 +16,8 @@ class CapacityOverloaded(Exception):
 class FalseCongestion(Exception):
     """ Used to detect congestion that were not congestions. """
     pass
+
+
+class FolderDoesNotExist(Exception):
+    """ Used to alert of existance of folder. """
+    pass
