@@ -7,11 +7,11 @@ import datetime as dt
 print( "smcfpl version: {}".format(smcfpl.__version__) )
 
 XLSX_FileName = 'DatosEntrada_39Bus_v6.xlsx'
-InFilePath = "./DatosEntrada"    # (str) Ruta relativa de Planilla xls|xlsx con hojas con nombre de los archivos de entrada.
-OutFilePath = "./DatosSalida"   # (str) Ruta relativa del Directorio que almacena las salidas. Debe existir previamente.
+InFilePath = "./InputData"    # (str) Ruta relativa de Planilla xls|xlsx con hojas con nombre de los archivos de entrada.
+OutFilePath = "./OutputData"   # (str) Ruta relativa del Directorio que almacena las salidas. Debe existir previamente.
 
 # Crea el caso de estudio ingresando los parámetros de la simulación
-Simulacion = smcfpl.Simulacion(
+Sim = smcfpl.Simulation(
     XLSX_FileName=XLSX_FileName,
     InFilePath = InFilePath,
     OutFilePath = OutFilePath,
@@ -38,4 +38,4 @@ Simulacion = smcfpl.Simulacion(
 )
 
 # Simulacion.run(delete_TempData=False)
-Simulacion.run(delete_TempData_post = False)
+Sim.run(delete_TempData_post = False)

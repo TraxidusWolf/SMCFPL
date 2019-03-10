@@ -77,11 +77,11 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100):
     RefBus = Grid.ext_grid.at[0, 'bus']  # only first index allowed. For now. TODO: convert others to gen. choose one.
     RefBusMatIndx = np__nonzero(Grid.bus.index == RefBus)[0][0]  # index of RefBus within Grid.bus.index. First value match
     # Get the dict of list of indices (for relationship with Bpr and Amat)
-    IndxBrnchElmnts = IndOfBranchElmnt(Grid)
+    IndxBrnchElmnts = ind_of_branch_elmnt(Grid)
     # Calculate GSDF matrix factors (uses aproximation for really small numbers)
-    GSDFmat = Calc_Factor_GSDF(Bbus, Bpr, Amat, RefBusMatIndx, CondMat=True, decs=14)
+    GSDFmat = calc_GSDF_factor(Bbus, Bpr, Amat, RefBusMatIndx, CondMat=True, decs=14)
     # Calculate GGDF and Generation Utilizatión matrix factors (uses aproximation for really small numbers)
-    GGDFmat, FUPTG, GenIndx2BusIndx, IndGenRef_GBusMat = Calc_Factor_GGDF(Grid,
+    GGDFmat, FUPTG, GenIndx2BusIndx, IndGenRef_GBusMat = calc_GGDF_Factor(Grid,
                                                                           GSDFmat,
                                                                           RefBus,
                                                                           decs=14,
@@ -209,7 +209,7 @@ def make_Bbus_Bpr_A(Grid):
     return Bbus, Bpr, Cft.astype(int)
 
 
-def IndOfBranchElmnt(Grid):
+def ind_of_branch_elmnt(Grid):
     """
         Obtiene un diccionario con los indices relativos a la matriz Bbus
         de los distintos 'branch' que existen (line, trafo, or trafo3w).
@@ -236,7 +236,7 @@ def IndOfBranchElmnt(Grid):
     return Dict_salida
 
 
-def Calc_Factor_GSDF(Bbus, Bpr, IncidenceMat, RefBusMatIndx, CondMat=False, decs=10):
+def calc_GSDF_factor(Bbus, Bpr, IncidenceMat, RefBusMatIndx, CondMat=False, decs=10):
     """
         Calcula la matriz GSDF a partir de:
 
@@ -295,7 +295,7 @@ def Calc_Factor_GSDF(Bbus, Bpr, IncidenceMat, RefBusMatIndx, CondMat=False, decs
     return GSDFmat
 
 
-def Calc_Factor_GGDF(Grid, GSDF, RefBus, decs=10, FUTP_cf=True):
+def calc_GGDF_Factor(Grid, GSDF, RefBus, decs=10, FUTP_cf=True):
     """
         Calculates Generalized Generation Distribution Factors (GGDFs).
 
@@ -367,7 +367,7 @@ def Calc_Factor_GGDF(Grid, GSDF, RefBus, decs=10, FUTP_cf=True):
     GGDF.data = np__round(GGDF.data, decs)  # approximate values to avoid numerical errors
 
     # Calculates "Factores de Utilización por Tramo de Generación"
-    FUPTG = Calc_FUTP_gen(GGDF, GenBus_mat, Gmat, F_ik, FUTP_cf, decs = decs)
+    FUPTG = calc_FUTP_gen(GGDF, GenBus_mat, Gmat, F_ik, FUTP_cf, decs = decs)
     if np__isnan(FUPTG).any():
         import numpy as np
         np.set_printoptions(linewidth=20000, threshold=2000)
@@ -384,7 +384,7 @@ def Calc_Factor_GGDF(Grid, GSDF, RefBus, decs=10, FUTP_cf=True):
     return GGDF, FUPTG, GenIndx2BusIndx, IndGenRef_GBusMat
 
 
-def Calc_FUTP_gen(GGDFmat, GenBus_mat, Gmat, F_ik, cf=True, decs = 10):
+def calc_FUTP_gen(GGDFmat, GenBus_mat, Gmat, F_ik, cf=True, decs = 10):
     """
         Un generador nunca va a estar conectado a dos barras simultáneamente (GenBus_mat).
         if cf=True:

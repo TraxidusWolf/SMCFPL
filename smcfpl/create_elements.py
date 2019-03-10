@@ -1,6 +1,6 @@
-from smcfpl.in_out_files import read_sheets_to_dataframes as smcfpl__in_out_files__read_sheets_to_dataframes
-from smcfpl.in_out_files import ImprimeBDsGrales as smcfpl__in_out_files__ImprimeBDsGrales
-from smcfpl.in_out_files import imprimeBDsCaso as smcfpl__in_out_files__imprimeBDsCaso
+from smcfpl.in_out_proc import read_sheets_to_dataframes as smcfpl__in_out_proc__read_sheets_to_dataframes
+from smcfpl.in_out_proc import ImprimeBDsGrales as smcfpl__in_out_proc__ImprimeBDsGrales
+from smcfpl.in_out_proc import imprimeBDsCaso as smcfpl__in_out_proc__imprimeBDsCaso
 from os.path import exists as os__path__exists, isdir as os__path__isdir
 from os.path import abspath as os__path__abspath, isfile as os__path__isfile
 from os import makedirs as os__makedirs, getcwd as os__getcwd
@@ -28,7 +28,7 @@ from multiprocessing import cpu_count as mu__cpu_count, Pool as mu__Pool
 from smcfpl.smcfpl_exceptions import *
 import smcfpl.aux_funcs as aux_smcfpl
 import smcfpl.SendWork2Nodes as SendWork2Nodes
-import smcfpl.NucleoCalculo as NucleoCalculo
+import smcfpl.core_calc as core_calc
 
 import logging
 Logging_level = logging.DEBUG
@@ -43,7 +43,7 @@ logging.getLogger("pandapower").setLevel(logger.level)
 # logging.getLogger("pandapower").setLevel(Logging_level)
 
 
-class Simulacion(object):
+class Simulation(object):
     """
         Clase base que contiene los atributos y métodos de la simulación para ejecutar el modelo exitosamente.
         Guarda las base de datos en memoria (pandas dataframe, diccionarios, etc), desde los cuales adquiere los datos para cada etapa. Ojo, durante
@@ -201,7 +201,7 @@ class Simulacion(object):
             ##########################################################
 
             # Imprime las  BDs generales a los distintos casos. Usa directorio temporal 'self.abs_path_temp'
-            smcfpl__in_out_files__ImprimeBDsGrales(self)
+            smcfpl__in_out_proc__ImprimeBDsGrales(self)
 
             # Crea lista con hidrologías de interés en los datos
             ListaHidrologias = ['Humeda', 'Media', 'Seca']
@@ -254,10 +254,10 @@ class Simulacion(object):
                         IdentificadorCaso = (HidNom, NDem, NGen)  # post-morten tag
                         if bool(self.NumParallelCPU):  # En paralelo
                             # Agrega la función con sus argumentos al Pool para ejecutarla en paralelo
-                            Results.append( Pool.apply_async(smcfpl__in_out_files__imprimeBDsCaso, (self, IdentificadorCaso, InputList)) )
+                            Results.append( Pool.apply_async(smcfpl__in_out_proc__imprimeBDsCaso, (self, IdentificadorCaso, InputList)) )
                         else:
                             # (En serie) Aplica directamente para cada caso
-                            smcfpl__in_out_files__imprimeBDsCaso(self, IdentificadorCaso, InputList)
+                            smcfpl__in_out_proc__imprimeBDsCaso(self, IdentificadorCaso, InputList)
 
             if bool(self.NumParallelCPU):  # En paralelo
                 print("Ejecutando paralelismo escritura BDs...")
@@ -380,7 +380,7 @@ class Simulacion(object):
 
                         if bool(self.NumParallelCPU):  # En paralelo
                             # Agrega la función con sus argumentos al Pool para ejecutarla en paralelo
-                            Results.append( Pool.apply_async( NucleoCalculo.Calcular,
+                            Results.append( Pool.apply_async( core_calc.calc,
                                                               ( ContadorCasos, HidNom, self.BD_RedesXEtapa,
                                                                 self.BD_Etapas.index, DF_ParamHidEmb_hid,
                                                                 self.BD_seriesconf,
@@ -395,7 +395,7 @@ class Simulacion(object):
                                             )
                         else:
                             # (En serie) Aplica directamente para cada caso
-                            Dict_Casos[IdentificadorCaso] = NucleoCalculo.Calcular( ContadorCasos, HidNom, self.BD_RedesXEtapa,
+                            Dict_Casos[IdentificadorCaso] = core_calc.calc( ContadorCasos, HidNom, self.BD_RedesXEtapa,
                                                                                     self.BD_Etapas.index, DF_ParamHidEmb_hid,
                                                                                     self.BD_seriesconf,
                                                                                     self.MaxItCongInter, self.MaxItCongIntra,
@@ -517,7 +517,7 @@ class Simulacion(object):
         # initialize return list
         ReturnList = []
         # lee archivos de entrada (dict of dataframes)
-        DFs_Entradas = smcfpl__in_out_files__read_sheets_to_dataframes(self.abs_InFilePath,
+        DFs_Entradas = smcfpl__in_out_proc__read_sheets_to_dataframes(self.abs_InFilePath,
                                                                        self.XLSX_FileName,
                                                                        self.NumParallelCPU)  # only exists here
         # Determina duración de las etapas  (1-indexed)

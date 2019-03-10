@@ -1,8 +1,8 @@
 """
-Este script esta diseñado para que pueda ser llamado como función 'Calcular' a partir del nombre ,i.e.,
+Este script esta diseñado para que pueda ser llamado como función 'Calc' a partir del nombre ,i.e.,
     import smcfpl.NucleoCalculo as NucleoCalculo  # En módulo
-    from NucleoCalculo import Calcular  # Directamente por interprete por ejemplo
-    NucleoCalculo.Calcular()
+    from NucleoCalculo import Calc  # Directamente por interprete por ejemplo
+    NucleoCalculo.Calc()
 """
 from pandapower import rundcpp as pp__rundcpp
 import time
@@ -18,7 +18,7 @@ from numpy import cos as np__cos, real as np__real
 # from smcfpl.aux_funcs import overloaded_trafo2w as aux_smcfpl__overloaded_trafo2w
 # from smcfpl.aux_funcs import overloaded_trafo3w as aux_smcfpl__overloaded_trafo3w
 from smcfpl.aux_funcs import TipoCong as aux_funcs__TipoCong
-from smcfpl.Redespacho import redispatch as Redespacho__redispatch, make_Bbus_Bpr_A as Redespacho__make_Bbus_Bpr_A
+from smcfpl.redispatch import redispatch as redispatch__redispatch, make_Bbus_Bpr_A as redispatch__make_Bbus_Bpr_A
 from smcfpl.smcfpl_exceptions import *
 
 
@@ -28,10 +28,10 @@ logging.basicConfig(level=logging.DEBUG,
 logger = logging.getLogger()
 
 
-def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
-             DF_seriesconf, MaxItCongInter, MaxItCongIntra, abs_OutFilePath='',
-             File_Caso='.', in_node=False, DemGenerator_Dict=dict(),
-             DispatchGenerator_Dict=dict() ):
+def calc(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
+         DF_seriesconf, MaxItCongInter, MaxItCongIntra, abs_OutFilePath='',
+         File_Caso='.', in_node=False, DemGenerator_Dict=dict(),
+         DispatchGenerator_Dict=dict() ):
     """
         Función base de cálculo para la resolución del modelo SMCFPL. Por cada etapa obtiene los valores
         de los generadores de demanda y generación para los elementos de la Grilla de la etapa ocurrente.
@@ -170,7 +170,7 @@ def Calcular(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             for TypeElmnt, ListIndTable in GCongDict.items():
                 for IndTable in ListIndTable:
                     try:
-                        Redespacho__redispatch(Grid, TypeElmnt, IndTable, max_load_percent=100)
+                        redispatch__redispatch(Grid, TypeElmnt, IndTable, max_load_percent=100)
                     except (FalseCongestion, CapacityOverloaded):
                         # Redispatch has no meaning. Congestion wan't real. Or
                         # Generator limits can't hadle congestion
@@ -419,7 +419,7 @@ def estimates_power_losses(net, method='linear'):
             IncidenceMat (2D array of R rows by N nodes)
             DeltaBarra (2D array of N nodes by 1 column). Results of power flow calculation
         """
-        Bbus, Bpr, A = Redespacho__make_Bbus_Bpr_A(net)  # from linear power flow (no Resistance in B)
+        Bbus, Bpr, A = redispatch__make_Bbus_Bpr_A(net)  # from linear power flow (no Resistance in B)
         G_vector = np__real(1 / Z_branches).T  # inverse of each value. Requieres resitance not to be Susceptance.
         DeltaBarra = net._ppc['bus'][:, [VA]]  # these should real values
         # PLoss = 2 * [G_vector]{1xR} * (1 - cos( [IncidenceMat]{RxN}* [DeltaBarra]{Nx1}))
