@@ -6,7 +6,7 @@ import smcfpl
 import datetime as dt
 print( "smcfpl version: {}".format(smcfpl.__version__) )
 
-XLSX_FileName = 'DatosEntrada_39Bus_v6.xlsx'
+XLSX_FileName = 'InputData_39Bus_v6.xlsx'
 InFilePath = "./InputData"    # (str) Ruta relativa de Planilla xls|xlsx con hojas con nombre de los archivos de entrada.
 OutFilePath = "./OutputData"   # (str) Ruta relativa del Directorio que almacena las salidas. Debe existir previamente.
 
