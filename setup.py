@@ -16,10 +16,11 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     keywords="Electric Power System Montecarlo Planning",
-    url='https://github.com/TraxidusWolf/SMCFPL',
+    url='https://traxiduswolf.github.io/SMCFPL',
     project_urls={
         # 'Documentation': 'None',
         'Source': 'https://github.com/TraxidusWolf/SMCFPL',
+        'home': 'https://traxiduswolf.github.io/SMCFPL',
     },
     packages=setuptools.find_packages(),
     install_requires=requirements,
