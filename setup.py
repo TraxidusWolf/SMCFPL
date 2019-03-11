@@ -12,15 +12,14 @@ setuptools.setup(
     version=__version__,
     author='Gabriel Seguel',
     author_email='traxiduswolf@gmail.com',
-    description="Case based of Montecarlo simuations for Electric Power Systems.",
+    description="Case based of Montecarlo simuations for Electric Power Systems",
     long_description=long_description,
     long_description_content_type='text/markdown',
     keywords="Electric Power System Montecarlo Planning",
-    url='https://traxiduswolf.github.io/SMCFPL',
+    url='https://traxiduswolf.github.io/SMCFPL',  # home site
     project_urls={
         # 'Documentation': 'None',
-        'Source': 'https://github.com/TraxidusWolf/SMCFPL',
-        'home': 'https://traxiduswolf.github.io/SMCFPL',
+        'Source': 'https://github.com/TraxidusWolf/SMCFPL',  # case sensitive
     },
     packages=setuptools.find_packages(),
     install_requires=requirements,
