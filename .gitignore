@@ -2,3 +2,7 @@ __pychache__/
 *.pyc
 in_out_files/__pycache__/
 in_out_files/__pycache__/read_inputs.cpython-36.pyc
+build/
+dist/
+TempData/
+smcfpl.egg-info/
