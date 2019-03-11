@@ -1,4 +1,4 @@
-__version__ = 1.0
+__version__ = 0.1
 """
     Archivo principal para ejecutar programa.
     Creado por:
