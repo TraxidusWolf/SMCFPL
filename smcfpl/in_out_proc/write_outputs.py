@@ -6,6 +6,7 @@ from os.path import exists as os__path__exists
 from json import dump as json__dump
 from pandapower import to_pickle as pp__to_pickle
 from pandas import DataFrame as pd__DataFrame
+from pickle import HIGHEST_PROTOCOL as pickle__HIGHEST_PROTOCOL, dump as pickle__dump
 import smcfpl.aux_funcs as aux_smcfpl
 
 
@@ -13,6 +14,32 @@ import logging
 logging.basicConfig(level=logging.DEBUG,
                     format="[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s")
 logger = logging.getLogger()
+
+
+def dump_BDs_to_pickle(Names_Variables, pathto='.', FileFormat='pickle'):
+    """
+        Names_Variables: dict like argument with names of variables as key and variable to print as values.
+            {   'BD_Etapas': self.BD_Etapas,
+                'BD_DemProy': self.BD_DemProy,
+                'BD_Hidrologias_futuras': self.BD_Hidrologias_futuras,
+                'BD_TSFProy': self.BD_TSFProy,
+                'BD_MantEnEta': self.BD_MantEnEta,
+                'BD_RedesXEtapa': self.BD_RedesXEtapa,
+                'BD_HistGenRenovable': self.BD_HistGenRenovable,
+                'BD_ParamHidEmb': self.BD_ParamHidEmb,
+                'BD_seriesconf': self.BD_seriesconf,
+            }
+        FileFormat='pickle': format to be printed each variable.
+        pathto: string with absolute path.
+    """
+    if FileFormat == 'pickle':
+        postfix = 'p'
+    else:
+        raise IOError("'{}' format not implemented yet or des not exists.". format(FileFormat))
+
+    for name, var in Names_Variables.items():
+        with open(pathto + os__sep + "{}.{}".format(name, postfix), 'wb') as f:
+            pickle__dump(var, f, pickle__HIGHEST_PROTOCOL)
 
 
 def ImprimeBDsGrales(instance):

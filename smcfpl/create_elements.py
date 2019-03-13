@@ -1,6 +1,12 @@
 from smcfpl.in_out_proc import read_sheets_to_dataframes as smcfpl__in_out_proc__read_sheets_to_dataframes
 from smcfpl.in_out_proc import ImprimeBDsGrales as smcfpl__in_out_proc__ImprimeBDsGrales
 from smcfpl.in_out_proc import imprimeBDsCaso as smcfpl__in_out_proc__imprimeBDsCaso
+from smcfpl.in_out_proc import dump_BDs_to_pickle as smcfpl__in_out_proc__dump_BDs_to_pickle
+from smcfpl.smcfpl_exceptions import *
+import smcfpl.aux_funcs as aux_smcfpl
+import smcfpl.SendWork2Nodes as SendWork2Nodes
+import smcfpl.core_calc as core_calc
+
 from os.path import exists as os__path__exists, isdir as os__path__isdir
 from os.path import abspath as os__path__abspath, isfile as os__path__isfile
 from os import makedirs as os__makedirs, getcwd as os__getcwd
@@ -15,6 +21,7 @@ from datetime import datetime as dt
 from datetime import timedelta as dt__timedelta
 from dateutil import relativedelta as du__relativedelta
 from shutil import rmtree as shutil__rmtree
+from pickle import load as pickle__load
 from pandapower import create_empty_network as pp__create_empty_network, create_buses as pp__create_buses
 from pandapower import create_line as pp__create_line, create_std_types as pp__create_std_types
 from pandapower import create_transformer as pp__create_transformer, create_transformer3w as pp__create_transformer3w
@@ -23,12 +30,7 @@ from pandapower import create_ext_grid as pp__create_ext_grid
 from pandapower.topology import unsupplied_buses as pp__topology__unsupplied_buses
 from pandapower import drop_inactive_elements as pp__drop_inactive_elements
 from pandapower import to_pickle as pp__to_pickle, from_pickle as pp__from_pickle
-from pickle import HIGHEST_PROTOCOL as pickle__HIGHEST_PROTOCOL, dump as pickle__dump, load as pickle__load
 from multiprocessing import cpu_count as mu__cpu_count, Pool as mu__Pool
-from smcfpl.smcfpl_exceptions import *
-import smcfpl.aux_funcs as aux_smcfpl
-import smcfpl.SendWork2Nodes as SendWork2Nodes
-import smcfpl.core_calc as core_calc
 
 import logging
 Logging_level = logging.DEBUG
@@ -69,6 +71,7 @@ class Simulation(object):
 
         """
         logger.debug("! inicializando clase Simulacion(...)  (CreaElementos.py)...")
+        STime = dt.now()
         #
         # Atributos desde entradas
         self.XLSX_FileName = XLSX_FileName  # (str)
@@ -126,11 +129,12 @@ class Simulation(object):
         self.BD_MantEnEta, self.BD_RedesXEtapa = _ReturnedBD[4], _ReturnedBD[5]
         self.BD_ParamHidEmb, self.BD_HistGenRenovable = _ReturnedBD[6], _ReturnedBD[7]
         self.BD_seriesconf = _ReturnedBD[8]
+        _ReturnedBD = None  # delete content for memory space
 
         if self.UseTempFolder and not self.BD_file_exists:
             self.write_DataBases_to_pickle(self.abs_path_temp)
 
-        print('self.BD_Etapas:', self.BD_Etapas)
+        print('self.BD_Etapas:\n', self.BD_Etapas)
         # Numero total de etapas
         self.NEta = self.BD_Etapas.shape[0]
 
@@ -145,10 +149,17 @@ class Simulation(object):
         self.DictTiposGenNoSlack = { k: d['ExtraData']['Tipos'] for k, d in self.BD_RedesXEtapa.items() }
         # # Obtiene Grillas de cada etapa en diccionario (1-indexed)
         # self.DictSEPBrutoXEtapa = {k: v['PandaPowerNet'] for k, v in self.BD_RedesXEtapa.items()}
+        RunTime = dt.now() - STime
+        minutes, seconds = divmod(RunTime.seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        msg = "Inicialization of Simulation class finished after {} [hr], {} [min] and {} [s].".format(
+            hours, minutes, seconds)
+        logger.info(msg)
         logger.debug("! inicialización clase Simulacion(...) (CreaElementos.py) Finalizada!")
 
     def run(self, delete_TempData_post=True):
         logger.debug("Corriendo método Simulacion.run()...")
+        STime = dt.now()
 
         # Comienza con la ejecución de lo cálculos
         if self.UsaSlurm:
@@ -396,14 +407,14 @@ class Simulation(object):
                         else:
                             # (En serie) Aplica directamente para cada caso
                             Dict_Casos[IdentificadorCaso] = core_calc.calc( ContadorCasos, HidNom, self.BD_RedesXEtapa,
-                                                                                    self.BD_Etapas.index, DF_ParamHidEmb_hid,
-                                                                                    self.BD_seriesconf,
-                                                                                    self.MaxItCongInter, self.MaxItCongIntra,
-                                                                                    self.abs_OutFilePath,
-                                                                                    DemGenerator_Dict={k: v for k, v in PyGeneratorDemand},
-                                                                                    DispatchGenerator_Dict={k: v for k, v in PyGeneratorDispatched},
-                                                                                    in_node=False,
-                                                                                    )
+                                                                            self.BD_Etapas.index, DF_ParamHidEmb_hid,
+                                                                            self.BD_seriesconf,
+                                                                            self.MaxItCongInter, self.MaxItCongIntra,
+                                                                            self.abs_OutFilePath,
+                                                                            DemGenerator_Dict={k: v for k, v in PyGeneratorDemand},
+                                                                            DispatchGenerator_Dict={k: v for k, v in PyGeneratorDispatched},
+                                                                            in_node=False,
+                                                                            )
                         ContadorCasos += 1
 
             if bool(self.NumParallelCPU):  # En paralelo
@@ -413,6 +424,13 @@ class Simulation(object):
                     # Ejecuta escribiendo a disco
                     Dict_Casos[IdentificadorCaso] = result.get()
 
+        NumberCases = len(ListaHidrologias) * NDem * NGen
+        RunTime = dt.now() - STime
+        minutes, seconds = divmod(RunTime.seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        msg = "Running {} cases finished after {} [hr], {} [min] and {} [s].".format(
+            NumberCases, hours, minutes, seconds)
+        logger.info(msg)
         logger.debug("Corrida método Simulacion.run() finalizada!")
 
     def ManageTempData(self, FileFormat):
@@ -434,8 +452,6 @@ class Simulation(object):
             else:
                 os__makedirs(self.abs_path_temp)
             if self.check_for_DataBases_in_temp_folder(self.abs_path_temp, formatFile=FileFormat):
-                msg = "BataBases files exist within temp Data folder."
-                logger.info(msg)
                 self.BD_file_exists = True
                 return self.import_DataBases_from_folder(self.abs_path_temp, formatFile=FileFormat)
             else:
@@ -456,6 +472,8 @@ class Simulation(object):
                     BD_seriesconf.p
             If at least one is missing, returns false.
         """
+        msg = "BataBases files exist within '{}' folder.".format(self.TempFolderName)
+        logger.info(msg)
         Laux = []
         Names2Look = ('BD_Etapas', 'BD_DemProy', 'BD_Hidrologias_futuras',
                       'BD_TSFProy', 'BD_MantEnEta', 'BD_RedesXEtapa',
@@ -483,6 +501,8 @@ class Simulation(object):
                 BD_seriesconf.p
             Return list with each database ordered as mentioned.
         """
+        msg = "importing BataBases from existing files in '{}' folder.".format(self.TempFolderName)
+        logger.info(msg)
         # initialize return list
         Return_list = []
         Names2Look = ('BD_Etapas', 'BD_DemProy', 'BD_Hidrologias_futuras',
@@ -514,12 +534,14 @@ class Simulation(object):
 
             Returns a list with all relevant databases, which are added to the ReturnList after creation.
         """
+        msg = "Creating Databases on memory."
+        logger.info(msg)
         # initialize return list
         ReturnList = []
         # lee archivos de entrada (dict of dataframes)
         DFs_Entradas = smcfpl__in_out_proc__read_sheets_to_dataframes(self.abs_InFilePath,
-                                                                       self.XLSX_FileName,
-                                                                       self.NumParallelCPU)  # only exists here
+                                                                      self.XLSX_FileName,
+                                                                      self.NumParallelCPU)  # only exists here
         # Determina duración de las etapas  (1-indexed)
         BD_Etapas = Crea_Etapas( DFs_Entradas['df_in_smcfpl_mantbarras'],
                                  DFs_Entradas['df_in_smcfpl_manttx'],
@@ -575,14 +597,14 @@ class Simulation(object):
                                          self.NumParallelCPU)
         ReturnList.append(BD_RedesXEtapa)
         # print("BD_RedesXEtapa:", BD_RedesXEtapa)
+        BD_ParamHidEmb = DFs_Entradas['df_in_smcfpl_ParamHidEmb']
+        ReturnList.append(BD_ParamHidEmb)
+        # print('BD_HistGenRenovable:', BD_HistGenRenovable)
         BD_HistGenRenovable = aux_smcfpl.GenHistorica_a_Etapa(BD_Etapas,
                                                               DFs_Entradas['df_in_smcfpl_histsolar'],
                                                               DFs_Entradas['df_in_smcfpl_histeolicas'])
         ReturnList.append(BD_HistGenRenovable)
         # print("BD_HistGenRenovable:", BD_HistGenRenovable)
-        BD_ParamHidEmb = DFs_Entradas['df_in_smcfpl_ParamHidEmb']
-        ReturnList.append(BD_ParamHidEmb)
-        # print('BD_HistGenRenovable:', BD_HistGenRenovable)
         BD_seriesconf = DFs_Entradas['df_in_smcfpl_seriesconf']
         ReturnList.append(BD_seriesconf)
         # print('BD_seriesconf:', BD_seriesconf)
@@ -610,14 +632,8 @@ class Simulation(object):
                             'BD_ParamHidEmb': self.BD_ParamHidEmb,
                             'BD_seriesconf': self.BD_seriesconf,
                             }
-        if FileFormat == 'pickle':
-            postfix = 'p'
-        else:
-            raise IOError("'{}' format not implemented yet or des not exists.". format(FileFormat))
+        smcfpl__in_out_proc__dump_BDs_to_pickle(Names_Variables, pathto=abs_path_temp, FileFormat=FileFormat)
 
-        for name, var in Names_Variables.items():
-            with open(abs_path_temp + os__sep + "{}.{}".format(name, postfix), 'wb') as f:
-                pickle__dump(var, f, pickle__HIGHEST_PROTOCOL)
 
 
 def Crea_Etapas(DF_MantBarras, DF_MantTx, DF_MantGen, DF_MantLoad, DF_Solar, DF_Eolicas, FechaComienzo, FechaTermino):
@@ -638,16 +654,16 @@ def Crea_Etapas(DF_MantBarras, DF_MantTx, DF_MantGen, DF_MantLoad, DF_Solar, DF_
             'TotalHoras': (int)
 
     :type DF_MantBarras: Pandas DataFrame
-    :param DF_MantBarras: DataFrame de los mantnimientos futuros a las barras simuladas.
+    :param DF_MantBarras: DataFrame de los mantenimientos futuros a las barras simuladas.
 
     :type DF_MantGen: Pandas DataFrame
     :param DF_MantGen: DataFrame de los mantenimientos futuros a las unidades generadoras simuladas.
 
     :type DF_MantTx: Pandas DataFrame
-    :param DF_MantTx: DataFrame de los mantnimientos futuros a los elementos del sistema de transmisión simulados.
+    :param DF_MantTx: DataFrame de los mantenimientos futuros a los elementos del sistema de transmisión simulados.
 
     :type DF_MantLoad: Pandas DataFrame
-    :param DF_MantLoad: DataFrame de los mantnimientos futuros a las cargas simuladas.
+    :param DF_MantLoad: DataFrame de los mantenimientos futuros a las cargas simuladas.
 
     :type DF_Solar: Pandas DataFrame
     :param DF_Solar: DataFrame del historial para la(s) unidad(es) tipo representativas para las unidades solares.

@@ -15,6 +15,8 @@ from numpy import arange as np__arange, array as np__array, sign as np__sign
 from numpy import uint8, uint32, uint64, int8, int32, int64
 from numpy import repeat as np__repeat, unique as np__unique
 from numpy import nonzero as np__nonzero, isnan as np__isnan
+from numpy import argwhere as np__argwhere, seterr as np__seterr
+import logging
 
 # custom module
 try:    # try importing locally when run independently
@@ -22,13 +24,13 @@ try:    # try importing locally when run independently
 except Exception:
     from smcfpl.smcfpl_exceptions import *
 
-import logging
+np__seterr(divide='ignore', invalid='ignore')
 logging.basicConfig(level=logging.DEBUG,
                     format="[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s")
 logger = logging.getLogger()
 
 
-def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100):
+def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
     """
         Elimina la congestión en TypeElmnt: BranchIndTable, en caso de poseer carga de
         potencia > max_load_percent.
@@ -79,12 +81,12 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100):
     # Get the dict of list of indices (for relationship with Bpr and Amat)
     IndxBrnchElmnts = ind_of_branch_elmnt(Grid)
     # Calculate GSDF matrix factors (uses aproximation for really small numbers)
-    GSDFmat = calc_GSDF_factor(Bbus, Bpr, Amat, RefBusMatIndx, CondMat=True, decs=14)
+    GSDFmat = calc_GSDF_factor(Bbus, Bpr, Amat, RefBusMatIndx, CondMat=True, decs=decs)
     # Calculate GGDF and Generation Utilizatión matrix factors (uses aproximation for really small numbers)
     GGDFmat, FUPTG, GenIndx2BusIndx, IndGenRef_GBusMat = calc_GGDF_Factor(Grid,
                                                                           GSDFmat,
                                                                           RefBus,
-                                                                          decs=14,
+                                                                          decs=decs,
                                                                           FUTP_cf=False)  # no correction flow
 
     # Get the row of the branch of interest from matrices (according to IndxBrnchElmnts and input argument)
@@ -117,7 +119,9 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100):
         if ind == IndGenRef_GBusMat:
             # nothing to modify here (Reference moves alone)
             continue
-
+        # Skip values if any of the rows has NaN
+        if np__isnan( ValInd ).any():
+            continue
         IndxGenGrid = Indices_GridGen[count]  # generator index of pandas table
         # determina si debe disminuir la potencia o aumentar en el generador
         if ValInd >= 0:  # This generator should reduce it's power (FUPTG >= 0)
@@ -368,23 +372,34 @@ def calc_GGDF_Factor(Grid, GSDF, RefBus, decs=10, FUTP_cf=True):
 
     # Calculates "Factores de Utilización por Tramo de Generación"
     FUPTG = calc_FUTP_gen(GGDF, GenBus_mat, Gmat, F_ik, FUTP_cf, decs = decs)
-    if np__isnan(FUPTG).any():
-        import numpy as np
-        np.set_printoptions(linewidth=20000, threshold=2000)
-        print("GGDF.A:\n", GGDF.A)
-        print("GGDF.shape:\n", GGDF.shape)
-        print("Gmat.A:\n", Gmat.A)
-        print("Gmat.shape:\n", Gmat.shape)
-        print("Grid._pd2ppc_lookups:", Grid._pd2ppc_lookups)
+    # if np__isnan(FUPTG).any():
+    #     import numpy as np
+    #     np.set_printoptions(linewidth=20000, threshold=2000)
+    #     # get the row with nan row
+    #     idxNan = np.unique( np.where( np.isnan(FUPTG) )[0] )[0]
+    #     print("idxNan:\n", idxNan)
+    #     # get to know name of element asociated to row
+    #     NameRowElmnt = name_of_elmnt_row(Grid, idxNan)
+    #     print("NameRowElmnt:\n", NameRowElmnt)
+    #     # find the column index of only one value = -1
+    #     NameColElmntNegative = ''
+    #     print("NameColElmntNegative:\n", NameColElmntNegative)
 
-        print("Grid:\n", Grid)
-        print("Grid.bus:\n", Grid.bus)
-        # print("Grid:\n", Grid)
-        import pdb; pdb.set_trace()  # breakpoint 81a312e5 //
+    #     print("FUPTG:\n", FUPTG)
+    #     print("FUPTG.shape:\n", FUPTG.shape)
+    #     print("GGDF.A:\n", GGDF.A)
+    #     print("GGDF.shape:\n", GGDF.shape)
+    #     print("GenBus_mat.A:\n", GenBus_mat.A)
+    #     print("GenBus_mat.shape:\n", GenBus_mat.shape)
+    #     print("Gmat.A:\n", Gmat.A)
+    #     print("Gmat.shape:\n", Gmat.shape)
+    #     print("Grid._pd2ppc_lookups:", Grid._pd2ppc_lookups)
+
+    #     print("Grid:\n", Grid)
     return GGDF, FUPTG, GenIndx2BusIndx, IndGenRef_GBusMat
 
 
-def calc_FUTP_gen(GGDFmat, GenBus_mat, Gmat, F_ik, cf=True, decs = 10):
+def calc_FUTP_gen(GGDFmat, GenBus_mat, Gmat, F_ik, cf = True, decs = 10):
     """
         Un generador nunca va a estar conectado a dos barras simultáneamente (GenBus_mat).
         if cf=True:
@@ -424,16 +439,14 @@ def calc_FUTP_gen(GGDFmat, GenBus_mat, Gmat, F_ik, cf=True, decs = 10):
     # Calcula la "Participación Total de Generacion" por rama
     PTG = (GGDFmat @ Gmat).toarray()  # matriz ya es bastante densa para usarla como ndarray
     # Amplia vector columna PTG al número de columnas de FUPT (Ngen)
-    PTG_mat = np__repeat(PTG, GenBus_mat.shape[1], axis= 1)  # recordar GenBus_mat (branch x Ngen)
+    PTG_mat = np__repeat(PTG, GenBus_mat.shape[1], axis = 1)  # recordar GenBus_mat (branch x Ngen)
     # Calcula los "Factores de Utilización por Tramo de generación"
-    print("PTG_mat:\n", PTG_mat)
     FUPT = (GGDFmat @ GenBus_mat).toarray() / PTG_mat
     FUPT = np__round(FUPT, decs)  # approximate values to avoid numerical errors
-    print("FUPT:\n", FUPT)
     return FUPT
 
 
-def sum_rows(A, rows='all'):
+def sum_rows(A, rows = 'all'):
     """ sumation along the rows (add all elements of the columns for each row independently).
         Similar to A.sum(axis=1) but return csr_matrix. Used to avoid pytest deprecated warning.
 
@@ -470,6 +483,22 @@ def power_over_congestion(Grid, TypeElmnt, BranchIndTable, max_load_percent):
     OverloadP_kW = FluPAB_kW - MaxFluP_kW
     OverloadP_kW += MaxFluP_kW * (0.05)  # increase 5% to compensate fpl error
     return OverloadP_kW, loading_percent
+
+
+def name_of_elmnt_row(Grid, idxNan):
+    """
+        Returns the name of row of from ppc elements of idxNan
+        Here row means branch.
+    """
+    DictIndices = ind_of_branch_elmnt(Grid)
+    for key, value in DictIndices.items():
+        if idxNan in value:
+            TypeElmnt, pdIndx = key, np__argwhere(value == idxNan)[0, 0]
+            break
+    else:
+        raise NameError("No idxNan: '{}' found in Grid".format(idxNan))
+    Name = Grid[TypeElmnt].at[pdIndx, 'name']
+    return Name
 
 
 if __name__ == '__main__':

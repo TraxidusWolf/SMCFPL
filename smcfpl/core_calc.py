@@ -170,7 +170,7 @@ def calc(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             for TypeElmnt, ListIndTable in GCongDict.items():
                 for IndTable in ListIndTable:
                     try:
-                        redispatch__redispatch(Grid, TypeElmnt, IndTable, max_load_percent=100)
+                        redispatch__redispatch(Grid, TypeElmnt, IndTable, max_load_percent=100, decs=30)
                     except (FalseCongestion, CapacityOverloaded):
                         # Redispatch has no meaning. Congestion wan't real. Or
                         # Generator limits can't hadle congestion
@@ -178,7 +178,9 @@ def calc(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
                     except Exception as e:  # cath other different errors
                         print("Exepciones!!!")
                         print(e)
-                        import pdb; pdb.set_trace()  # breakpoint cb41466d //
+                        import pdb; pdb.set_trace()  # breakpoint cb41466d //  !import code; code.interact(local=vars())
+                        continue
+
                     # keeps track of number of times done
                     ContadorIntra += 1
                     if ContadorIntra <= MaxItCongIntra:
@@ -209,7 +211,7 @@ def calc(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         # Calcula pérdidas por flujo de líneas
         PLoss = estimates_power_losses(Grid, method='linear')
         PLoss = estimates_power_losses(Grid, method='cosine')
-        # print("PLoss:\n", PLoss)
+        print("PLoss:\n", PLoss)
 
     print("----------------------------")
     print("Este fue CasoNum:", CasoNum)
@@ -222,54 +224,6 @@ def calc(CasoNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         #     f.write( "Este es caso " + str(CasoNum) )
     else:
         return (CasoNum, {})
-
-    # # Notar que el número de etapas es siempre el mismo, por lo que nunca se retorna de StopIteration cuando se acaban.
-    # for CustsDem, GensDispatch in zip(GeneratorDemand, GeneratorDispatch):
-    #     StageNum = CustsDem[0]
-    #     # StageNum = GensDispatch[0]
-    #     # print( "StageNum:", StageNum )
-    #     CustomersDemands = CustsDem[1]  # Free and Regulated Customers
-    #     GensDispatched = GensDispatch[1]
-
-    #     #
-    #     #
-    #     # Grid.bus.loc[ pp.topology.unsupplied_buses(Grid), : ]  # Nombre de barras no suministradas
-    #     # pp.drop_inactive_elements(Grid)  # remueve elementos que están sin actividad o estado fuera de servicio
-    #     #
-    #     #
-
-    #     # Calcula excedente disponible de potencia sistema
-
-    #     # Según excedente determina si es factible el sistema, de lo contrario imprime caso infactible
-
-    #     # Inicializa contadores de congestiones
-
-    #     # Calcula el CMg del sistema
-
-    #     # Corre el flujo de potencia linealizado en la grilla de la etapa
-    #     pp__rundcpp(DictRawSyst_per_Stage[StageNum])
-    #     # Identifica lineas con sobrecarga para ver congestiones
-
-    #     # De las congestiones verifica las Inter e Intra
-
-    #     """ De existir Intra,
-    #         repite lpf mientras condición de contadores o No existen congestiones. aumenta contador Intra
-    #     """
-
-    #     """ De existir Inter,
-    #         separa el sep dejando como referencia ???... . Repite lpf mientras condición de contadores
-    #         o No existen congestiones. aumenta contador Inter
-    #     """
-
-    #     #
-
-    #     print(DictRawSyst_per_Stage[StageNum])
-
-    #     # print()
-    # Numero de cargas (Depende de etapa)
-    # Escoger lista demandas. Desde generator
-    # Numero de Unidades - 1 (Depende de etapa)
-    # Escoger lista despachos. Desde generator
 
 
 """
@@ -419,7 +373,7 @@ def estimates_power_losses(net, method='linear'):
             IncidenceMat (2D array of R rows by N nodes)
             DeltaBarra (2D array of N nodes by 1 column). Results of power flow calculation
         """
-        Bbus, Bpr, A = redispatch__make_Bbus_Bpr_A(net)  # from linear power flow (no Resistance in B)
+        Bbus, Bpr, IncidenceMat = redispatch__make_Bbus_Bpr_A(net)  # from linear power flow (no Resistance in B)
         G_vector = np__real(1 / Z_branches).T  # inverse of each value. Requieres resitance not to be Susceptance.
         DeltaBarra = net._ppc['bus'][:, [VA]]  # these should real values
         # PLoss = 2 * [G_vector]{1xR} * (1 - cos( [IncidenceMat]{RxN}* [DeltaBarra]{Nx1}))
