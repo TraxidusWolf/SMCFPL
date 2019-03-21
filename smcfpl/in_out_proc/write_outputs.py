@@ -101,13 +101,15 @@ def imprimeBDsCaso(instance, IdentificadorCaso, InputList):
     PyGeneratorDemand = aux_smcfpl.GeneradorDemanda(DF_TasaCLib=instance.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
                                                     DF_TasaCReg=instance.BD_DemProy[['TasaCliReg']],  # pandas DataFrame
                                                     DF_DesvDec=instance.BD_DemProy[['Desv_decimal']],  # pandas DataFrame
-                                                    ListTypoCargasEta=instance.ListTypoCargasEta)  # lista
+                                                    ListTypoCargasEta=instance.ListTypoCargasEta,  # lista
+                                                    seed=instance.UseRandomSeed)  # int
     PyGeneratorDispatched = aux_smcfpl.GeneradorDespacho(Lista_TiposGen=instance.ListTiposGenNoSlack,  # lista
                                                          DF_HistGenERNC=instance.BD_HistGenRenovable,  # tupla de dos pandas DataFrame
                                                          DF_TSF=instance.BD_TSFProy,  # para cada tecnología que recurra con falla se asigna
                                                          DF_PE_Hid=InputList['DF_PEsXEtapa'],  # pandas DataFrame
                                                          DesvEstDespCenEyS=instance.DesvEstDespCenEyS,  # float
-                                                         DesvEstDespCenP=instance.DesvEstDespCenP)  # float
+                                                         DesvEstDespCenP=instance.DesvEstDespCenP,  # float
+                                                         seed=instance.UseRandomSeed)  # int
 
     # Imprime las los archivos de Redes/Grids de cada etapa, para luego ser leídos por los nodos.
     for GenDisp, GenDem in zip(PyGeneratorDispatched, PyGeneratorDemand):

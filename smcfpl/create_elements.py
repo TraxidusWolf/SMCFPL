@@ -52,12 +52,12 @@ class Simulation(object):
         paralelismo se aumentarán los requerimientos de memoria según la cantidad de tareas.
     """
 
-    def __init__(self, XLSX_FileName='', InFilePath='.', OutFilePath='.', Sbase_MVA=100, MaxItCongInter=1,
+    def __init__(self, XLSX_FileName='', InFilePath='.', OutFilePath='.', Sbase_MVA=100, MaxNumVecesSubRedes=1,
                  MaxItCongIntra=1, FechaComienzo='2018-01-01 00:00', FechaTermino='2019-01-31 23:59',
                  NumVecesDem=1, NumVecesGen=1, PerdCoseno=True, PEHidSeca=0.8, PEHidMed=0.5, PEHidHum=0.2,
                  DesvEstDespCenEyS=0.1, DesvEstDespCenP=0.2, NumParallelCPU=False, UsaSlurm=False,
                  Working_dir=os__getcwd(), UseTempFolder = True, RemovePreTempData=True,
-                 smcfpl_dir=os__getcwd(), TempFolderName='TempData' ):
+                 smcfpl_dir=os__getcwd(), TempFolderName='TempData', UseRandomSeed=False):
         """
             :param UsaSlurm: Diccionario con parámetros para ejecución en el sistema de colas de slurm. Hace que se ejecuten comandos (con biblioteca subprocess) sbatch
                             propios de slurm para ejecución en varios nodos. Se escriben BD datos en un directorio temporal para ser copiado a cada nodo.
@@ -77,7 +77,7 @@ class Simulation(object):
         self.XLSX_FileName = XLSX_FileName  # (str)
         self.InFilePath = InFilePath    # (str)
         self.Sbase_MVA = Sbase_MVA  # (float)
-        self.MaxItCongInter = MaxItCongInter    # (int)
+        self.MaxNumVecesSubRedes = MaxNumVecesSubRedes    # (int)
         self.MaxItCongIntra = MaxItCongIntra    # (int)
         self.FechaComienzo = dt.strptime(FechaComienzo, "%Y-%m-%d %H:%M")  # (str) -> datetime
         self.FechaTermino = dt.strptime(FechaTermino, "%Y-%m-%d %H:%M")    # (str) -> datetime
@@ -99,9 +99,8 @@ class Simulation(object):
             # Puede ser False: No usa paralelismo ni lectura ni cálculo, 'Max' para todos los procesadores, o un 'int' tamaño personalizado pool
             msg = "Input 'NumParallelCPU' debe ser integer, False, o 'Max'."
             logger.error(msg)
-            raise ValueError(msg)
+            raise IOError(msg)
         self.UsaSlurm = UsaSlurm  # (bool)
-        self.Working_dir = Working_dir  # (str)
         self.UseTempFolder = UseTempFolder  # (bool)
         self.RemovePreTempData = RemovePreTempData  # (bool)
         self.TempFolderName = TempFolderName
@@ -110,6 +109,12 @@ class Simulation(object):
         self.DirSalidas = os__path__abspath(OutFilePath)
         self.abs_InFilePath = os__path__abspath(InFilePath)
         self.abs_OutFilePath = os__path__abspath(OutFilePath)
+        if isinstance(UseRandomSeed, int) and not isinstance(UseRandomSeed, bool):
+            self.UseRandomSeed = UseRandomSeed
+        else:
+            msg = "'UseRandomSeed' must be an integer."
+            raise IOError(msg)
+            logger.error(msg)
         self.BD_file_exists = False
 
         # Verifies if it's necesary to import or calculate data. Added them to attributes
@@ -308,7 +313,7 @@ class Simulation(object):
                 #                            NTotalCasos=NTotalCasos,
                 #                            StageIndexesList = self.BD_Etapas.index.tolist(),
                 #                            NumParallelCPU=self.NumParallelCPU,
-                #                            MaxItCongInter=self.MaxItCongInter,
+                #                            MaxNumVecesSubRedes=self.MaxNumVecesSubRedes,
                 #                            MaxItCongIntra=self.MaxItCongIntra, )
                 c += NumTrbjs
                 print("NumTrbjs:", NumTrbjs)
@@ -377,14 +382,16 @@ class Simulation(object):
                                                                         DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
                                                                         DF_TasaCReg=self.BD_DemProy[['TasaCliReg']],  # pandas DataFrame
                                                                         DF_DesvDec=self.BD_DemProy[['Desv_decimal']],  # pandas DataFrame
-                                                                        DictTypoCargasEta=self.DictTypoCargasEta)  # diccionario
+                                                                        DictTypoCargasEta=self.DictTypoCargasEta,  # diccionario
+                                                                        seed=self.UseRandomSeed)  # int
                         PyGeneratorDispatched = aux_smcfpl.GeneradorDespacho(StageIndexesList=self.BD_Etapas.index.tolist(),
                                                                              Dict_TiposGen=self.DictTiposGenNoSlack,  # lista
                                                                              DF_HistGenERNC=self.BD_HistGenRenovable,  # tupla de dos pandas DataFrame
                                                                              DF_TSF=self.BD_TSFProy,  # para cada tecnología que recurra con falla se asigna
                                                                              DF_PE_Hid=DF_PEsXEtapa,  # pandas DataFrame
                                                                              DesvEstDespCenEyS=self.DesvEstDespCenEyS,  # float
-                                                                             DesvEstDespCenP=self.DesvEstDespCenP)  # float
+                                                                             DesvEstDespCenP=self.DesvEstDespCenP,  # float
+                                                                             seed=self.UseRandomSeed)  # int
 
                         # permite generar nombre del sub-directorio '{HidNom}_D{NDem}_G{NGen}'
                         IdentificadorCaso = (HidNom, NDem, NGen)  # post-morten tag
@@ -395,7 +402,7 @@ class Simulation(object):
                                                               ( ContadorCasos, HidNom, self.BD_RedesXEtapa,
                                                                 self.BD_Etapas.index, DF_ParamHidEmb_hid,
                                                                 self.BD_seriesconf,
-                                                                self.MaxItCongInter, self.MaxItCongIntra,
+                                                                self.MaxNumVecesSubRedes, self.MaxItCongIntra,
                                                                 ),
                                                               # No se pueden pasar argumentos en generadores en paralelo
                                                               { 'DemGenerator_Dict': {k: v for k, v in PyGeneratorDemand},
@@ -409,7 +416,7 @@ class Simulation(object):
                             Dict_Casos[IdentificadorCaso] = core_calc.calc( ContadorCasos, HidNom, self.BD_RedesXEtapa,
                                                                             self.BD_Etapas.index, DF_ParamHidEmb_hid,
                                                                             self.BD_seriesconf,
-                                                                            self.MaxItCongInter, self.MaxItCongIntra,
+                                                                            self.MaxNumVecesSubRedes, self.MaxItCongIntra,
                                                                             self.abs_OutFilePath,
                                                                             DemGenerator_Dict={k: v for k, v in PyGeneratorDemand},
                                                                             DispatchGenerator_Dict={k: v for k, v in PyGeneratorDispatched},
@@ -424,12 +431,11 @@ class Simulation(object):
                     # Ejecuta escribiendo a disco
                     Dict_Casos[IdentificadorCaso] = result.get()
 
-        NumberCases = len(ListaHidrologias) * NDem * NGen
         RunTime = dt.now() - STime
         minutes, seconds = divmod(RunTime.seconds, 60)
         hours, minutes = divmod(minutes, 60)
         msg = "Running {} cases finished after {} [hr], {} [min] and {} [s].".format(
-            NumberCases, hours, minutes, seconds)
+            ContadorCasos - 1, hours, minutes, seconds)
         logger.info(msg)
         logger.debug("Corrida método Simulacion.run() finalizada!")
 
@@ -568,7 +574,8 @@ class Simulation(object):
         # Almacena la PE de cada año para cada hidrología (pandas Dataframe)
         BD_Hidrologias_futuras = aux_smcfpl.Crea_hidrologias_futuras( DFs_Entradas['df_in_smcfpl_histhid'],
                                                                       BD_Etapas, self.PEHidSeca, self.PEHidMed,
-                                                                      self.PEHidHum, self.FechaComienzo, self.FechaTermino)
+                                                                      self.PEHidHum, self.FechaComienzo, self.FechaTermino,
+                                                                      seed=self.UseRandomSeed)
         ReturnList.append(BD_Hidrologias_futuras)
         # Respecto a la base de datos 'in_smcfpl_ParamHidEmb' en DFs_Entradas['df_in_smcfpl_ParamHidEmb'], ésta es dependiente de hidrologías solamente
         # Respecto a la base de datos 'in_smcfpl_seriesconf' en DFs_Entradas['df_in_smcfpl_seriesconf'], ésta define configuración hidráulica fija

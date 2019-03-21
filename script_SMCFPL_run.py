@@ -16,8 +16,8 @@ Sim = smcfpl.Simulation(
     InFilePath = InFilePath,
     OutFilePath = OutFilePath,
     Sbase_MVA = 100,
-    MaxItCongInter = 1,
-    MaxItCongIntra = 1,
+    MaxNumVecesSubRedes = 1,  # maximun number allowed up to create sub-nets from Inter-Congestions
+    MaxItCongIntra = 10,
     FechaComienzo = '2018-06-01 00:00',  # formato "%Y-%m-%d %H:%M"
     FechaTermino = '2023-05-31 23:00',  # formato "%Y-%m-%d %H:%M"
     NumVecesDem = 2,
@@ -35,6 +35,7 @@ Sim = smcfpl.Simulation(
     Working_dir = '.',
     UseTempFolder = True,
     RemovePreTempData = False,  # only considered if UseTempFolder == True
+    UseRandomSeed=4,
 )
 
 # Simulacion.run(delete_TempData=False)

@@ -108,7 +108,6 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         # Corrobora factibilidad del despacho uninodal
         if DeltaP_Uninodal > 0:  # De ser positivo indica PNS!
             msg = msg.format(StageNum, len(StageIndexesList), CaseNum)
-            msg += '. ! Pasando a siguiente etapa.'
             logger.warn(msg)
             #
             # ¿Eliminar etapa?¿?
@@ -126,12 +125,10 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         GenRefExceeded, msg = check_limits_GenRef(Grid)
         if GenRefExceeded == 1:  # PGenSlack es más Negativo que Pmax (sobrecargado)
             msg = msg.format(StageNum, len(StageIndexesList), CaseNum)
-            msg += '. ! Pasando a siguiente etapa.'
             logger.warn(msg)
             continue
         elif GenRefExceeded == -1:  # PGenSlack es más Positivo que Pmin (comporta como carga)
             msg = msg.format(StageNum, len(StageIndexesList), CaseNum)
-            msg += '. ! Pasando a siguiente etapa.'
             logger.warn(msg)
             continue
 
@@ -174,11 +171,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         """
         # Revisa la congestiones intra hasta que se llega a algún límite
         _Returned = do_intra_congestion(Grid, ListaCongIntra, MaxItCongIntra, in_node, StageNum, StageIndexesList, CaseNum)
-        print("**************************************")
-        print("_Returned:\n", _Returned)
-        print("**************************************")
         if _Returned:
-            print("Retornando _Returned:\n", _Returned)
             return _Returned
 
         """
@@ -195,8 +188,8 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         if ListaCongInter:
             # Divide Grid in N SubGrids if there is inter-congestion
             SubGrids = divide_grid_by_intercongestion(Grid, ListaCongInter)
-            # for subgrid in SubGrids:
-            #     pass
+            for subgrid in SubGrids:
+                pass
 
         # (Multiplica dos pandas Series) Indices
         # son creados secuencialmente, por lo que no necesita ser DataFrame
@@ -211,9 +204,6 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         PLoss = estimates_power_losses(Grid, method='linear')
         # PLoss = estimates_power_losses(Grid, method='cosine')
         print("PLoss:\n", PLoss)
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        print("CaseNum:", CaseNum, "terminado exitosamente")
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 
     print("----------------------------")
     print("Este fue CaseNum:", CaseNum)
@@ -364,71 +354,42 @@ def do_intra_congestion(Grid, ListaCongIntra, MaxItCongIntra, in_node, StageNum,
         Returns values if something goes wrong. Otherwise it's None.
     """
     ContadorIntra = 0
-    ListaCongIntra = iter(ListaCongIntra)
-    while ContadorIntra <= MaxItCongIntra:
-        try:
-            GCongDict = next(ListaCongIntra)
-        except StopIteration:
-            print("No more Intra congestions are allowed.")
-            break
-
+    for GCongDict in ListaCongIntra:
         for TypeElmnt, ListIndTable in GCongDict.items():
             print("TypeElmnt:", TypeElmnt)
-            print("ListIndTable:", ListIndTable)
-            # for IndTable in ListIndTable:
-            if ListIndTable:
-                IndTable = ListIndTable[0]  # any of the list is needed
+            for IndTable in ListIndTable:
                 print("IndTable:", IndTable)
-            else:
-                # no elements within TypeElmnt
-                print("IndTable has no values")
+                try:
+                    redispatch__redispatch(Grid, TypeElmnt, IndTable, max_load_percent=100, decs=30)
+                except FalseCongestion:
+                    # Redispatch has no meaning. Congestion wan't real.
+                    continue
+                except CapacityOverloaded:
+                    # Generators limits can't handle congestion. No much meaning to keep going.
+                    break
+                except Exception as e:  # cath other different errors
+                    print("Exepciones!!!")
+                    print(e)
+                    continue
+
+                # keeps track of number of times done
+                ContadorIntra += 1
+                print("ContadorIntra", ContadorIntra)
+                if ContadorIntra >= MaxItCongIntra:
+                    # limit of IntraCongestion is reached
+                    msg = "Límite de MaxItCongIntra alcanzado en etapa {}/{} del caso {}!.".format(
+                        StageNum, len(StageIndexesList), CaseNum)
+                    logger.warn(msg)
+                    import pdb; pdb.set_trace()  # breakpoint 9a7f8ec5 //
+                    break
+            else:  # if for not break then:
                 continue
-            print("ContadorIntra", ContadorIntra)
-            # keeps track of number of times done
-            ContadorIntra += 1
-
-            try:
-                print("!!! Start redispatching...")
-                redispatch__redispatch(Grid, TypeElmnt, IndTable, max_load_percent=100, decs=30)
-                print("!!! Ends redispatching...")
-            except FalseCongestion:
-                # Redispatch has no meaning. Congestion wan't real.
-                continue
-            except CapacityOverloaded:
-                # Generators limits can't handle congestion. No much meaning to keep going.
-                break
-
-            if ContadorIntra >= MaxItCongIntra:
-                # limit of IntraCongestion is reached
-                msg = "Límite de MaxItCongIntra alcanzado en etapa {}/{} del caso {}!.".format(
-                    StageNum, len(StageIndexesList), CaseNum)
-                logger.warn(msg)
-                import pdb; pdb.set_trace()  # breakpoint 9a7f8ec5 //
-                break
-
+            break
         else:  # if for not break then:
-            print("Enter No break for loop")
-            # calculates load flow
-            pp__rundcpp(Grid)
-            # checks for reference generator limits
-            RE_MaxGen_kW = abs(Grid.ext_grid.at[0, 'max_p_kw'])
-            RE_MinGen_kW = abs(Grid.ext_grid.at[0, 'min_p_kw'])
-            RE_Gen_kW = abs(Grid.res_ext_grid.at[0, 'p_kw'])
-            if (RE_Gen_kW > RE_MaxGen_kW) | (RE_Gen_kW < RE_MinGen_kW):
-                print("...Limites máximos de generador de referencia superados. {}>={}>={}".format(RE_MaxGen_kW, RE_Gen_kW, RE_MinGen_kW))
-                # finish function when outside limits
-                return return_values(in_node, CaseNum)
-            print("Modifica ListaCongIntra según nuevo fpl")
-            # checks for congestión again
-            _, ListaCongIntra = aux_funcs__TipoCong(Grid, max_load=100)
-            print("ListaCongIntra:", ListaCongIntra)
-            ListaCongIntra = iter(ListaCongIntra)
-            print("Exit No break for loop")
             continue
-        break
         print("Got out (break) of current stage because of MaxItCongIntra")
         # Enough time!! Go home.
-        import pdb; pdb.set_trace()  # breakpoint 8ac2571a //
+        import pdb; pdb.set_trace()  # breakpoint 35ee227b //
         return return_values(in_node, CaseNum)
     return None
 
@@ -488,7 +449,7 @@ def divide_grid_by_intercongestion(Grid, ListaCongInter):
                 logger.error(msg)
                 raise ValueError(msg)
             # creates an external grid with 0 power
-            pp__create_ext_grid(net_i, bus=ConectingBus, vm_pu=1.0, va_degree=0.0, name='VirtualRef', max_p_kw=-9999999, min_p_kw=0)
+            pp__create_ext_grid(net_i, bus=ConectingBus, vm_pu=1.0, va_degree=0.0, name='VirtualRef')
 
             # CALC |PCong - Pmax|
             # OverloadP_kW, loading_percent = redispatch__power_over_congestion(net_i, TypeElmnt, BranchIndTable, max_load_percent)

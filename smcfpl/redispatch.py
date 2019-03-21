@@ -94,9 +94,11 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
     ### (Por ahora) Uses FUPTG to determine the most and least participation generators on line flow
     # Obtiene el máximo y el mínimo de fila de la rama en cuestión
     RowValues = FUPTG[TheRowBrnchIndMat, :]
+    print("RowValues:", RowValues)
 
     # identifica valores del más al menos influyente en valor absoluto
     IndxSorted = abs(RowValues).argsort()[::-1]  # [::-1] is reversed
+    print("IndxSorted:", IndxSorted)
 
     # calcula la potencia sobrante
     OverloadP_kW, loading_percent = power_over_congestion(Grid,
@@ -113,6 +115,7 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
     Indices_GridGen = Grid['gen'].index
     count = 0  # requiere to call generators and skip the reference one
     for ind in IndxSorted:
+        print("ind:", ind)
         # iterates over decreasing (absolute) ordered FUPTG of branch
         ValInd = RowValues[ind]  # value of FUPTG associated
         # jumps if reaches reference generators
@@ -123,6 +126,7 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
         if np__isnan( ValInd ).any():
             continue
         IndxGenGrid = Indices_GridGen[count]  # generator index of pandas table
+        print("ValInd:", ValInd)
         # determina si debe disminuir la potencia o aumentar en el generador
         if ValInd >= 0:  # This generator should reduce it's power (FUPTG >= 0)
             LimitekW = abs(Grid['gen'].at[IndxGenGrid, 'min_p_kw'])
@@ -140,7 +144,15 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
             # calculate new power to give to generator
             NewPowerkW = DeltaPAvail_kW - OverloadP_kW
 
-        if DeltaPAvail_kW <= 0 :  # is it possible?
+        print("IndxGenGrid:", IndxGenGrid)
+        print("Grid['gen'].at[IndxGenGrid, 'name']:", Grid['gen'].at[IndxGenGrid, 'name'])
+        print("OverloadP_kW:", OverloadP_kW)
+        print("LimitekW:", LimitekW)
+        print("CurrentPowerkW:", CurrentPowerkW)
+        print("DeltaPAvail_kW:", DeltaPAvail_kW)
+        print("NewPowerkW:", NewPowerkW)
+        print()
+        if DeltaPAvail_kW <= 0 :  # is it possible? Yes, at maximum dispatch
             # no power available to reduce in this generator
             continue
         elif NewPowerkW < 0:
@@ -149,15 +161,20 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
             NewPowerkW = LimitekW
         else:  # NewPowerkW >= 0
             OverloadP_kW -= DeltaPAvail_kW
+        print("OverloadP_kW:", OverloadP_kW)
+        print("NewPowerkW:", NewPowerkW)
         Grid['gen'].at[IndxGenGrid, 'p_kw'] = -NewPowerkW
+        print()
+        print()
 
         # determina condición de salida. O que se acaben los generadores
         if OverloadP_kW <= 0:
+            # congestion already disipated
             break
         count += 1  # helps keep track of Indices_GridGen
     else:  # if not break for loop
         if OverloadP_kW > 0:
-            msg = "Not enought power available on generators to stop congestion."
+            msg = "Not enough power available on generators to stop 'inter-congestion'."
             logger.error(msg)
             raise CapacityOverloaded(msg)
 

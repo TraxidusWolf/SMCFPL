@@ -9,6 +9,7 @@ from pandas import datetime as pd__datetime, set_option as pd__set_option
 from pandas import concat as pd__concat, Timedelta as pd__Timedelta
 from numpy import mean as np__mean, nan as np__NaN, arange as np__arange, bool_ as np__bool_
 from numpy.random import uniform as np_random__uniform, normal as np__random__normal
+from numpy.random import seed as np__random__seed
 from numpy.random import choice as np__random__choice
 from dateutil.relativedelta import relativedelta as du__relativedelta
 from collections import OrderedDict as collections__OrderedDict
@@ -248,7 +249,7 @@ def TasaDemandaEsperada_a_Etapa(DF_ProyDem, BD_Etapas, FechaIniSim, FechaFinSim)
     return DF_Salida
 
 
-def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_HidHumeda, FechaIniSim, FechaFinSim):
+def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_HidHumeda, FechaIniSim, FechaFinSim, seed=False):
     """
         Desde la tabla de entrada de 'in_smcfpl_histhid', calcula la probabilidad de excedencia (PE) anual de los años de la muestra que luego es adaptada (por promedio en caso de ambigüedad) a las etapas de la simulación.
         Notar como en las etapas renovables de cada etapa topológica, la PE es constante debido a la misma definición.
@@ -268,8 +269,22 @@ def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_
             10.- Asigna las PE anuales a todas etapas en simulación (renovables - todas). En caso de existir etapas topológicas entre años, se asigna la PE promedio de los años en cuestión
 
         Retorna un pandas DataFrame con la probabilidad de excedencia de cada etapa (indice) en cada una de las tres hidrologías.
+
+        INPUT:
+            **DF_HistHid**
+            **DF_Etapas**
+            **PE_HidSeca**
+            **PE_HidMedia**
+            **PE_HidHumeda**
+            **FechaIniSim**
+            **FechaFinSim**
+        Optional:
+            **seed** (int, False) - set random number seed to this value.
+        :param seed: Sets the random number to be tha same always
+        :type seed: int
     """
     logger.debug("! entrando en función: 'Crea_hidrologias_futuras' (aux_funcs.py) ...")
+    np__random__seed()  # make is more random
     # calcula años en horizonte de simulación
     NAniosSimulacion = du__relativedelta(FechaFinSim, FechaIniSim).years + 2  # cuenta el primero y el último
     ListaAniosSim = [FechaIniSim.year + i for i in range(NAniosSimulacion)]
@@ -320,6 +335,10 @@ def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_
             # 5.- Obtiene el máximo y mínimo valor de variación intermensual del año representativo de la hidrología y obtiene los valores entre los que limita
             MaxE_Anio = ( 1 + min(DF_VarMens.values.max(), .5) ) * AnioCercano['TOTAL']  # limita la variación límite a no más de un 150% de la energía
             MinE_Anio = ( 1 + max(DF_VarMens.values.min(), -.5) ) * AnioCercano['TOTAL']  # limita la variación límite a no menos de un -150% de la energía
+
+            if seed:
+                # In case a seed is given (int) it's used to generate same numbers from seed
+                np__random__seed(seed)
 
             # 6.- Modifica la energía afluente, UNIFORMEMENTE ALEATORIOS entre máx y mín (anteriores) dado por rango variación intermensual
             # 6.1.- En caso de hidrología media
@@ -603,7 +622,7 @@ def GenHistorica_a_Etapa(DF_Etapas, DF_histsolar, DF_histeolicas):
 
 
 def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_TasaCReg = pd__DataFrame(),
-                      DF_DesvDec = pd__DataFrame(), DictTypoCargasEta = {}):
+                      DF_DesvDec = pd__DataFrame(), DictTypoCargasEta = {}, seed=False):
     """
         Genera un iterador de valor p.u. de las demandas en cada carga (Ésta
         debe ser multiplicada por el valor inicial nominal de la carga al
@@ -639,6 +658,9 @@ def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_Tas
         :param DictTypoCargasEta: Tipo de las cargas ('L' o 'R') que posee la Grilla en cada etapa.
         :type DictTypoCargasEta: Diccionario {EtaNum: pandas DataFrame}
 
+        :param seed: Sets the random number to be tha same always
+        :type seed: int
+
         Cada vez que se llama retorna una tupla con: (EtaNum, pandas DataFrame)
 
         Pasos:
@@ -652,6 +674,7 @@ def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_Tas
                 2.4.- Agrega arreglo al DataFrame de Salida.
                 2.5.- Retorna la tupla (EtaNum 1-indexed, pandas DataFrame)
     """
+    np__random__seed()  # make is more random
     # Verifica que el largo de Etapas sean coincidentes, de lo contrario retorna ValueError
     if DF_TasaCLib.shape[0] != DF_TasaCReg.shape[0] != DF_DesvDec.shape[0] != len(DictTypoCargasEta):
         msg = "El numero de etapas en DF_TasaCLib, DF_TasaCReg y DF_DesvDec son diferentes del tamaño de DictTypoCargasEta."
@@ -665,6 +688,10 @@ def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_Tas
         IndCLib = DictTypoCargasEta[EtaNum][ DictTypoCargasEta[EtaNum]['type'] == 'L' ].index
         # Obtiene los indices de las cargas en la etapa actual que sean Clientes Regulados
         IndCReg = DictTypoCargasEta[EtaNum][ DictTypoCargasEta[EtaNum]['type'] == 'R' ].index
+
+        if seed:
+            # In case a seed is given (int) it's used to generate same numbers from seed
+            np__random__seed(seed)
 
         #
         # Utiliza crecimiento esperado (DF_TasaCLib | DF_TasaCReg) como valor promedio para cada cliente,
@@ -685,7 +712,7 @@ def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_Tas
 
 
 def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC = None,
-                       DF_TSF = None, DF_PE_Hid = None, DesvEstDespCenEyS=1, DesvEstDespCenP=1):
+                       DF_TSF = None, DF_PE_Hid = None, DesvEstDespCenEyS=1, DesvEstDespCenP=1, seed=False):
     """
         Genera un iterador de valores p.u. de las potencias de despacho en cada unidad de generación de las distintas tecnologías. Estos valores
         deben ser multiplicados por el valor nominal de potencia de generación de la unidad y limitados entre pmin y pmax). El iterador crea un
@@ -714,7 +741,10 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
                 2.8.- En caso de Otras, genera despacho para cada uno y, les aplica TSF sobre despacho según entradas.
                 2.9.- Retorna la tupla (EtaNum 1-indexed, pandas DataFrame)
 
+        :param seed: Sets the random number to be tha same always
+        :type seed: int
     """
+    np__random__seed()  # make is more random
     # Corrobora que el largo de los parámetros de entrada (teóricamente el Número de etapas), sea igual. De lo contrario retorna ValueError
     if len(Dict_TiposGen) != DF_HistGenERNC[0].shape[0] != DF_HistGenERNC[1].shape[0] != DF_TSF.shape[0] != DF_PE_Hid.shape[0]:
         msg = "El numero de etapa en los parámetros de entrada no coinciden."
@@ -753,6 +783,10 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
         #
         # Por cada nombre ERNC se obtiene e valor aleatorio, según sus medias y desviaciones estándar
         for NomERNC in NombresERNCTipo:
+            if seed:
+                # In case a seed is given (int) it's used to generate same numbers from seed
+                np__random__seed(seed)
+
             if 'Solar' in NomERNC:
                 Power_pu = np__random__normal( loc=float(DF_HistGenERNC[0].loc[EtaNum, NomERNC + '_mean']),
                                                scale=float(DF_HistGenERNC[0].loc[EtaNum, NomERNC + '_std']))
@@ -777,6 +811,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
 
         # Para las tecnologías hidráulicas asigna promedio según PE y desv según parámetros 'DesvEstDespCenEyS' y 'DesvEstDespCenP'
         if len(IndGenEmb):  # EMBALSE
+            if seed:
+                # In case a seed is given (int) it's used to generate same numbers from seed
+                np__random__seed(seed)
             # valor de pdf gaussiana/normal
             Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
                                            scale=DesvEstDespCenEyS,
@@ -793,6 +830,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
             DF_IndGen_PDispatched.loc[ IndGenEmb, 'PGen_pu'] = Power_pu
 
         if len(IndGenSerie):  # SERIE
+            if seed:
+                # In case a seed is given (int) it's used to generate same numbers from seed
+                np__random__seed(seed)
             # valor de pdf gaussiana/normal
             Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
                                            scale=DesvEstDespCenEyS,
@@ -809,6 +849,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
             DF_IndGen_PDispatched.loc[ IndGenSerie, 'PGen_pu'] = Power_pu
 
         if len(IndGenPasada):    # PASADA
+            if seed:
+                # In case a seed is given (int) it's used to generate same numbers from seed
+                np__random__seed(seed)
             # valor de pdf gaussiana/normal
             Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
                                            scale=DesvEstDespCenP,
@@ -825,6 +868,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
             DF_IndGen_PDispatched.loc[ IndGenPasada, 'PGen_pu'] = Power_pu
 
         if len(IndGenTermoCarbon):    # CARBON
+            if seed:
+                # In case a seed is given (int) it's used to generate same numbers from seed
+                np__random__seed(seed)
             # valor de pdf uniforme
             Power_pu = np_random__uniform( low=0.0,
                                            high=1.0,
@@ -841,6 +887,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
             DF_IndGen_PDispatched.loc[ IndGenTermoCarbon, 'PGen_pu'] = Power_pu
 
         if len(IndGenTermoGasDie):    # GAS-DIÉSEL
+            if seed:
+                # In case a seed is given (int) it's used to generate same numbers from seed
+                np__random__seed(seed)
             # valor de pdf uniforme
             Power_pu = np_random__uniform( low=0.0,
                                            high=1.0,
@@ -857,6 +906,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
             DF_IndGen_PDispatched.loc[ IndGenTermoGasDie, 'PGen_pu'] = Power_pu
 
         if len(IndGenTermoOtras):    # OTRAS
+            if seed:
+                # In case a seed is given (int) it's used to generate same numbers from seed
+                np__random__seed(seed)
             # valor de pdf uniforme
             Power_pu = np_random__uniform( low=0.0,
                                            high=1.0,
@@ -901,12 +953,12 @@ def TipoCong(Grid, max_load=100):
         Identifica los grupos de elementos congestionados. El umbral para la cargabilidad
         del elemento de transmisión está dado en porcentaje por el parámetro 'max_load'.
         Para efectos prácticos los transformadores de tres devanados son considerados
-        de potencia infinita, por lo que no se revisan para congestiones.
+        de potencia infinita, por lo que no se revisan por congestiones.
         Se hace de valer que los indices de las matrices de la red PandaPower
         son los mismo que los indices de los nodos en los grafos y subgrafos creados, siempre
         y cuando no exista un elemento perdido que las conecte, de lo contrario, se crea el nodo.
         Retorna una tupla con dos listas de grupos de elementos congestionados.
-        Ejemplo:
+        Ejemplo return:
             ( ListaCongInter, ListaCongIntra )
             donde:
                 ListaCongIntra = [GCong1, GCong2, ...]
@@ -1005,7 +1057,7 @@ def TipoCong(Grid, max_load=100):
          #      #   #  #      #   #           #    #   #   #  #  #      #
          #       ####  #       ####          ###   #   #    ##    ###   #
     """
-    # Por cada congestión del tipo Intra verifica las
+    # Por cada congestión del tipo Inter verifica las
     # potencias circulantes similares agrupándolas, además
     # estando los elementos adyacentes (una barra en común)
     #
@@ -1016,9 +1068,9 @@ def TipoCong(Grid, max_load=100):
             tipoElemento = DF_cong.iloc[0]['TypeElmnt']
             indiceTabla = DF_cong.iloc[0]['IndTable']
             if tipoElemento == 'line':
-                ListaCongIntra.append( {'line': [indiceTabla], 'trafo': []} )
+                ListaCongInter.append( {'line': [indiceTabla], 'trafo': []} )
             else:
-                ListaCongIntra.append( {'line': [], 'trafo': [indiceTabla]} )
+                ListaCongInter.append( {'line': [], 'trafo': [indiceTabla]} )
             continue
         elif DF_cong.empty:
             # extraño caso que estuviera vacío (quizá no tanto)
@@ -1063,7 +1115,7 @@ def TipoCong(Grid, max_load=100):
                     # agrega elemento encontrado al grupo. Solo una coincidencia.
                     GrupoCongCom['line'].append(Ln.index[0])
             # Agrega grupo a lista
-            ListaCongIntra.append(GrupoCongCom)
+            ListaCongInter.append(GrupoCongCom)
 
     """
          ####                                ###           #
@@ -1085,9 +1137,9 @@ def TipoCong(Grid, max_load=100):
             tipoElemento = DF_cong.iloc[0]['TypeElmnt']
             indiceTabla = DF_cong.iloc[0]['IndTable']
             if tipoElemento == 'line':
-                ListaCongInter.append( {'line': [indiceTabla], 'trafo': []} )
+                ListaCongIntra.append( {'line': [indiceTabla], 'trafo': []} )
             else:
-                ListaCongInter.append( {'line': [], 'trafo': [indiceTabla]} )
+                ListaCongIntra.append( {'line': [], 'trafo': [indiceTabla]} )
             continue
         elif DF_cong.empty:
             # extraño caso que estuviera vacío (quizá no tanto)
