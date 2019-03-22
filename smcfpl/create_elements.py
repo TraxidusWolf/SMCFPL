@@ -1,6 +1,6 @@
 from smcfpl.in_out_proc import read_sheets_to_dataframes as smcfpl__in_out_proc__read_sheets_to_dataframes
 from smcfpl.in_out_proc import ImprimeBDsGrales as smcfpl__in_out_proc__ImprimeBDsGrales
-from smcfpl.in_out_proc import imprimeBDsCaso as smcfpl__in_out_proc__imprimeBDsCaso
+from smcfpl.in_out_proc import write_BDs_input_case as smcfpl__in_out_proc__write_BDs_input_case
 from smcfpl.in_out_proc import dump_BDs_to_pickle as smcfpl__in_out_proc__dump_BDs_to_pickle
 from smcfpl.smcfpl_exceptions import *
 import smcfpl.aux_funcs as aux_smcfpl
@@ -158,7 +158,7 @@ class Simulation(object):
         minutes, seconds = divmod(RunTime.seconds, 60)
         hours, minutes = divmod(minutes, 60)
         msg = "Inicialization of Simulation class finished after {} [hr], {} [min] and {} [s].".format(
-            hours, minutes, seconds)
+            hours, minutes, seconds + RunTime.microseconds * 1e-6)
         logger.info(msg)
         logger.debug("! inicialización clase Simulacion(...) (CreaElementos.py) Finalizada!")
 
@@ -168,15 +168,15 @@ class Simulation(object):
 
         # Comienza con la ejecución de lo cálculos
         if self.UsaSlurm:
-            logger.info("Resolviendo casos para los nodos.")
+            logger.info("Solving cases in NODE MODE.")
             """
-                ##    ##  #######  ########  ########    ##      ##  #######  ########  ##    ##
-                ###   ## ##     ## ##     ## ##          ##  ##  ## ##     ## ##     ## ##   ##
-                ####  ## ##     ## ##     ## ##          ##  ##  ## ##     ## ##     ## ##  ##
-                ## ## ## ##     ## ##     ## ######      ##  ##  ## ##     ## ########  #####
-                ##  #### ##     ## ##     ## ##          ##  ##  ## ##     ## ##   ##   ##  ##
-                ##   ### ##     ## ##     ## ##          ##  ##  ## ##     ## ##    ##  ##   ##
-                ##    ##  #######  ########  ########     ###  ###   #######  ##     ## ##    ##
+                    ##    ##  #######  ########  ########    ##     ##  #######  ########  ########
+                    ###   ## ##     ## ##     ## ##          ###   ### ##     ## ##     ## ##
+                    ####  ## ##     ## ##     ## ##          #### #### ##     ## ##     ## ##
+                    ## ## ## ##     ## ##     ## ######      ## ### ## ##     ## ##     ## ######
+                    ##  #### ##     ## ##     ## ##          ##     ## ##     ## ##     ## ##
+                    ##   ### ##     ## ##     ## ##          ##     ## ##     ## ##     ## ##
+                    ##    ##  #######  ########  ########    ##     ##  #######  ########  ########
 
                 # En caso de declarar uso de Slurm, se trabaja con archivos en lugar de mantener la base de datos
                 general en memoria RAM, incluyendo todo lo necesario (Reduce velocidad). Estos archivos son
@@ -267,13 +267,13 @@ class Simulation(object):
                         }
 
                         # permite generar nombre del sub-directorio '{HidNom}_D{NDem}_G{NGen}'
-                        IdentificadorCaso = (HidNom, NDem, NGen)  # post-morten tag
+                        CaseIdentifier = (HidNom, NDem, NGen)  # post-morten tag
                         if bool(self.NumParallelCPU):  # En paralelo
                             # Agrega la función con sus argumentos al Pool para ejecutarla en paralelo
-                            Results.append( Pool.apply_async(smcfpl__in_out_proc__imprimeBDsCaso, (self, IdentificadorCaso, InputList)) )
+                            Results.append( Pool.apply_async(smcfpl__in_out_proc__write_BDs_input_case, (self, CaseIdentifier, InputList)) )
                         else:
                             # (En serie) Aplica directamente para cada caso
-                            smcfpl__in_out_proc__imprimeBDsCaso(self, IdentificadorCaso, InputList)
+                            smcfpl__in_out_proc__write_BDs_input_case(self, CaseIdentifier, InputList)
 
             if bool(self.NumParallelCPU):  # En paralelo
                 print("Ejecutando paralelismo escritura BDs...")
@@ -314,20 +314,21 @@ class Simulation(object):
                 #                            StageIndexesList = self.BD_Etapas.index.tolist(),
                 #                            NumParallelCPU=self.NumParallelCPU,
                 #                            MaxNumVecesSubRedes=self.MaxNumVecesSubRedes,
-                #                            MaxItCongIntra=self.MaxItCongIntra, )
+                #                            MaxItCongIntra=self.MaxItCongIntra,
+                #                            CaseID=CaseIdentifier  )
                 c += NumTrbjs
                 print("NumTrbjs:", NumTrbjs)
                 # print("Res:", Res)
 
         else:
             """
-                ##        #######   ######     ###    ##          ##      ##  #######  ########  ##    ##
-                ##       ##     ## ##    ##   ## ##   ##          ##  ##  ## ##     ## ##     ## ##   ##
-                ##       ##     ## ##        ##   ##  ##          ##  ##  ## ##     ## ##     ## ##  ##
-                ##       ##     ## ##       ##     ## ##          ##  ##  ## ##     ## ########  #####
-                ##       ##     ## ##       ######### ##          ##  ##  ## ##     ## ##   ##   ##  ##
-                ##       ##     ## ##    ## ##     ## ##          ##  ##  ## ##     ## ##    ##  ##   ##
-                ########  #######   ######  ##     ## ########     ###  ###   #######  ##     ## ##    ##
+                    ##        #######   ######     ###    ##          ##     ##  #######  ########  ########
+                    ##       ##     ## ##    ##   ## ##   ##          ###   ### ##     ## ##     ## ##
+                    ##       ##     ## ##        ##   ##  ##          #### #### ##     ## ##     ## ##
+                    ##       ##     ## ##       ##     ## ##          ## ### ## ##     ## ##     ## ######
+                    ##       ##     ## ##       ######### ##          ##     ## ##     ## ##     ## ##
+                    ##       ##     ## ##    ## ##     ## ##          ##     ## ##     ## ##     ## ##
+                    ########  #######   ######  ##     ## ########    ##     ##  #######  ########  ########
 
                 # En caso contrario trabaja con la información en memoria. Proceso no compatible con paralelización por nodo - cluster.
                 # Procedimiento jerárquico:
@@ -336,7 +337,7 @@ class Simulation(object):
                     .- Definir Despacho
                     .- Resolución Etapas
             """
-            logger.info("Resolviendo casos en forma local.")
+            logger.info("Solving cases in LOCAL MODE.")
             # Crea lista con hidrologías de interés en los datos
             ListaHidrologias = ['Humeda', 'Media', 'Seca']
 
@@ -394,34 +395,34 @@ class Simulation(object):
                                                                              seed=self.UseRandomSeed)  # int
 
                         # permite generar nombre del sub-directorio '{HidNom}_D{NDem}_G{NGen}'
-                        IdentificadorCaso = (HidNom, NDem, NGen)  # post-morten tag
+                        CaseIdentifier = (HidNom, NDem, NGen)  # post-morten tag
 
                         if bool(self.NumParallelCPU):  # En paralelo
                             # Agrega la función con sus argumentos al Pool para ejecutarla en paralelo
                             Results.append( Pool.apply_async( core_calc.calc,
                                                               ( ContadorCasos, HidNom, self.BD_RedesXEtapa,
                                                                 self.BD_Etapas.index, DF_ParamHidEmb_hid,
-                                                                self.BD_seriesconf,
-                                                                self.MaxNumVecesSubRedes, self.MaxItCongIntra,
+                                                                self.BD_seriesconf, self.MaxNumVecesSubRedes,
+                                                                self.MaxItCongIntra,
                                                                 ),
                                                               # No se pueden pasar argumentos en generadores en paralelo
                                                               { 'DemGenerator_Dict': {k: v for k, v in PyGeneratorDemand},
                                                                 'DispatchGenerator_Dict': {k: v for k, v in PyGeneratorDispatched},
-                                                                'in_node': False,
+                                                                'in_node': False, 'CaseID': CaseIdentifier,
                                                                 }
                                                               )
                                             )
                         else:
                             # (En serie) Aplica directamente para cada caso
-                            Dict_Casos[IdentificadorCaso] = core_calc.calc( ContadorCasos, HidNom, self.BD_RedesXEtapa,
-                                                                            self.BD_Etapas.index, DF_ParamHidEmb_hid,
-                                                                            self.BD_seriesconf,
-                                                                            self.MaxNumVecesSubRedes, self.MaxItCongIntra,
-                                                                            self.abs_OutFilePath,
-                                                                            DemGenerator_Dict={k: v for k, v in PyGeneratorDemand},
-                                                                            DispatchGenerator_Dict={k: v for k, v in PyGeneratorDispatched},
-                                                                            in_node=False,
-                                                                            )
+                            Dict_Casos[CaseIdentifier] = core_calc.calc( ContadorCasos, HidNom, self.BD_RedesXEtapa,
+                                                                         self.BD_Etapas.index, DF_ParamHidEmb_hid,
+                                                                         self.BD_seriesconf,
+                                                                         self.MaxNumVecesSubRedes, self.MaxItCongIntra,
+                                                                         self.abs_OutFilePath,
+                                                                         DemGenerator_Dict={k: v for k, v in PyGeneratorDemand},
+                                                                         DispatchGenerator_Dict={k: v for k, v in PyGeneratorDispatched},
+                                                                         in_node=False, CaseID=CaseIdentifier,
+                                                                         )
                         ContadorCasos += 1
 
             if bool(self.NumParallelCPU):  # En paralelo
@@ -429,13 +430,13 @@ class Simulation(object):
                 # Obtiene los resultados del paralelismo, en caso de existir
                 for result in Results:
                     # Ejecuta escribiendo a disco
-                    Dict_Casos[IdentificadorCaso] = result.get()
+                    Dict_Casos[CaseIdentifier] = result.get()
 
         RunTime = dt.now() - STime
         minutes, seconds = divmod(RunTime.seconds, 60)
         hours, minutes = divmod(minutes, 60)
         msg = "Running {} cases finished after {} [hr], {} [min] and {} [s].".format(
-            ContadorCasos - 1, hours, minutes, seconds)
+            ContadorCasos - 1, hours, minutes, seconds + RunTime.microseconds * 1e-6)
         logger.info(msg)
         logger.debug("Corrida método Simulacion.run() finalizada!")
 
@@ -458,9 +459,13 @@ class Simulation(object):
             else:
                 os__makedirs(self.abs_path_temp)
             if self.check_for_DataBases_in_temp_folder(self.abs_path_temp, formatFile=FileFormat):
+                msg = "All databases files exist within '{}' folder.".format(self.TempFolderName)
+                logger.info(msg)
                 self.BD_file_exists = True
                 return self.import_DataBases_from_folder(self.abs_path_temp, formatFile=FileFormat)
             else:
+                msg = "At least one doesn't o None database file exist within '{}' folder.".format(self.TempFolderName)
+                logger.info(msg)
                 return self.Create_DataBases()
         else:
             return self.Create_DataBases()
@@ -478,8 +483,6 @@ class Simulation(object):
                     BD_seriesconf.p
             If at least one is missing, returns false.
         """
-        msg = "BataBases files exist within '{}' folder.".format(self.TempFolderName)
-        logger.info(msg)
         Laux = []
         Names2Look = ('BD_Etapas', 'BD_DemProy', 'BD_Hidrologias_futuras',
                       'BD_TSFProy', 'BD_MantEnEta', 'BD_RedesXEtapa',
@@ -507,7 +510,7 @@ class Simulation(object):
                 BD_seriesconf.p
             Return list with each database ordered as mentioned.
         """
-        msg = "importing BataBases from existing files in '{}' folder.".format(self.TempFolderName)
+        msg = "Importing databases from existing files in '{}' folder.".format(self.TempFolderName)
         logger.info(msg)
         # initialize return list
         Return_list = []
@@ -540,7 +543,7 @@ class Simulation(object):
 
             Returns a list with all relevant databases, which are added to the ReturnList after creation.
         """
-        msg = "Creating Databases on memory."
+        msg = "Creating Databases on memory..."
         logger.info(msg)
         # initialize return list
         ReturnList = []

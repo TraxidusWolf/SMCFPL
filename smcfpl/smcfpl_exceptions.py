@@ -3,6 +3,11 @@
 """
 
 
+class InsuficientInputData(Exception):
+    """ Used when reading data from input sheadsheet. Not enough data. """
+    pass
+
+
 class InvalidOption(Exception):
     """ Generally used in if-elif-ELSE statements to notice one case was missing to capture. """
     pass

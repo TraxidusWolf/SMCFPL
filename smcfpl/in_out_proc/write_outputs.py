@@ -76,11 +76,13 @@ def ImprimeBDsGrales(instance):
     logger.info("Exportado de archivos genéricos temporales completado.")
 
 
-def imprimeBDsCaso(instance, IdentificadorCaso, InputList):
+def write_BDs_input_case(instance, IdentificadorCaso, InputList):
     """
         Escribe en disco en directorio de trabajo, las base de datos dependientes de cada caso,
         como son las grillas (pickle) y, la ExtraData (JSON) que no puede ser almacenada directamente
         en la grilla.
+
+        Is it really nedeed?
     """
     # Crea el nombre de la carpeta del caso, en función del Identificador
     CasoNom = "{0}_D{1}_G{2}".format( *IdentificadorCaso )
@@ -139,3 +141,12 @@ def imprimeBDsCaso(instance, IdentificadorCaso, InputList):
         # Exporta la red a archivo pickle. Necesario para exportar tipos de lineas. Más pesado que JSON y levemente más lento pero funcional... :c
         pp__to_pickle( instance.BD_RedesXEtapa[StageNum]['PandaPowerNet'], FolderName + os__sep + "Grid_Eta{}.p".format(StageNum) )
     logger.info("Exportado del caso {} completado.".format(CasoNom))
+
+
+def write_output_case(RelevantData, CaseNum, CaseID):
+    """ Write to output directory one pickled file with available results.
+
+
+    """
+    CaseNom = "{0}_D{1}_G{2}".format( *CaseID )
+    dump_BDs_to_pickle({CaseNom: RelevantData}, pathto='.', format='pickle')  # try write to output folder

@@ -9,6 +9,7 @@ from pandas import read_excel as pd__read_excel, to_datetime as pd__to_datetime
 from multiprocessing import cpu_count as mu__cpu_count, Pool as mu__Pool
 from numpy import bool_ as np__bool_
 import smcfpl.aux_funcs as aux_smcfpl
+from smcfpl.smcfpl_exceptions import *
 
 
 aux_smcfpl.print_full_df()
@@ -50,7 +51,7 @@ def read_sheets_to_dataframes(ruta, NombreLibro, NumParallelCPU):
     # Ruta completa (relativa) donde se encuentra el archivo
     RutaCompleta = ruta + os__sep + NombreLibro
     # Abre el libro
-    logger.info("Leyendo archivo de entrada: {}...".format(RutaCompleta))
+    logger.info("Reading Input file: {}...".format(RutaCompleta))
     Libro = xlrd__open_workbook(RutaCompleta)
     # verifica si falta alguna hoja en el libro excel
     HojasFaltantes = []
@@ -58,8 +59,9 @@ def read_sheets_to_dataframes(ruta, NombreLibro, NumParallelCPU):
         if hoja not in Libro.sheet_names():
             HojasFaltantes.append(hoja)
     if HojasFaltantes:  # de faltar alguna se muestra logging de error
-        logger.error("Faltan las hojas: " + ", ".join(HojasFaltantes))
-        raise ValueError("Faltan hojas necesarias en planilla de entrada.")
+        msg = "Sheets missing within input Spreadsheet: " + ", ".join(HojasFaltantes)
+        logger.error(msg)
+        raise ValueError(msg)
 
     # Crea diccionario con dataframe de todos los datos de entrada
     DFs_entrada = {}
@@ -78,7 +80,7 @@ def read_sheets_to_dataframes(ruta, NombreLibro, NumParallelCPU):
             Ncpu = NumParallelCPU
         elif NumParallelCPU == 'Max':
             Ncpu = mu__cpu_count()
-        logger.info("Leyendo entradas en paralelo. Utilizando máximo {} procesos simultáneos.".format(Ncpu))
+        logger.info("Reading input sheets in parallel. Using maximun {} simultaneous processes.".format(Ncpu))
         Pool = mu__Pool(Ncpu)
         Results = []
         # Por cada hoja rellena el Pool
@@ -107,11 +109,12 @@ def Lee_Hoja_planilla(RutaCompleta, NombreHoja, EsParamHid, *args):
         TODO: Desde los args, buscar el indice de columna de cada uno de ellos y leer dichas columnas con pandas.read_excel().
     """
     logger.debug("! entrando en función: 'Lee_Hoja_planilla' (read_inputs.py) - '{}'...".format(NombreHoja))
-    logger.info("Extrayendo datos desde hoja: {} ...".format(NombreHoja))
+    logger.info("Extracting data from sheet: {} ...".format(NombreHoja))
 
     if not len(args):
-        logger.warn("No se ingresaron nombre de variables a leer para hoja '{}'".format(NombreHoja))
-        raise ValueError("Ninguna columna para leer ha sido ingresada.")
+        msg = "No variable names for sheet '{}' were declared.".format(NombreHoja)
+        logger.warn(msg)
+        raise ValueError(msg)
 
     if EsParamHid:
         # notar que header = [...] retorna un multicolumns dataframe que tiene varios títulos (pudiendo repetirse el nombre). Set de columnas son set de tuplas.
@@ -121,7 +124,7 @@ def Lee_Hoja_planilla(RutaCompleta, NombreHoja, EsParamHid, *args):
 
     if df.empty:
         # verifica si hoja está vacía
-        msg = "Hoja: '{}' No posee valores.".format(NombreHoja)
+        msg = "Sheet: '{}' has no values.".format(NombreHoja)
         logger.warn(msg)
         # raise ValueError(msg)  # no levantar error, ya que pueden no existir determinados elementos de las planillas.
 
@@ -131,7 +134,7 @@ def Lee_Hoja_planilla(RutaCompleta, NombreHoja, EsParamHid, *args):
     if VariablesFaltantes:
         msg = "Dentro de hoja '{}', No se encontraron las variables requeridas: ".format(NombreHoja) + str(VariablesFaltantes)
         logger.error(msg)
-        raise ValueError("Variables de entrada insuficientes.")
+        raise InsuficientInputData("Variables de entrada insuficientes.")
 
     # Warning en caso de ingresarse un mismo elemento (barra, linea, trafo, gen, o carga) en el mismo archivo técnico
     EntradasTecnicas = ['in_smcfpl_tecbarras', 'in_smcfpl_teclineas', 'in_smcfpl_teclineas', 'in_smcfpl_tectrafos2w', 'in_smcfpl_tectrafos3w',

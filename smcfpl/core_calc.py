@@ -19,6 +19,7 @@ from pandas import concat as pd__concat
 from numpy import cos as np__cos, real as np__real
 # from smcfpl.aux_funcs import overloaded_trafo2w as aux_smcfpl__overloaded_trafo2w
 # from smcfpl.aux_funcs import overloaded_trafo3w as aux_smcfpl__overloaded_trafo3w
+from smcfpl.in_out_proc import write_output_case as smcfpl__in_out_proc__write_output_case
 from smcfpl.aux_funcs import TipoCong as aux_funcs__TipoCong
 from smcfpl.redispatch import redispatch as redispatch__redispatch, make_Bbus_Bpr_A as redispatch__make_Bbus_Bpr_A
 from smcfpl.redispatch import power_over_congestion as redispatch__power_over_congestion
@@ -33,7 +34,7 @@ logger = logging.getLogger()
 
 def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
          DF_seriesconf, MaxNumVecesSubRedes, MaxItCongIntra, abs_OutFilePath='',
-         File_Caso='.', in_node=False, DemGenerator_Dict=dict(),
+         File_Caso='.', in_node=False, DemGenerator_Dict=dict(), CaseID=('hid', 0, 0),
          DispatchGenerator_Dict=dict() ):
     """
         Función base de cálculo para la resolución del modelo SMCFPL. Por cada etapa obtiene los valores
@@ -74,6 +75,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         :type DispatchGenerator_Dict: Diccionario
 
     """
+    RelevantData = {}
     print("Hidrology:", Hidrology)
     # for each stage in the case
     for StageNum in StageIndexesList:
@@ -173,13 +175,14 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
                                                                                              ###
         """
         # Revisa la congestiones intra hasta que se llega a algún límite
-        _Returned = do_intra_congestion(Grid, ListaCongIntra, MaxItCongIntra, in_node, StageNum, StageIndexesList, CaseNum)
-        print("**************************************")
-        print("_Returned:\n", _Returned)
-        print("**************************************")
-        if _Returned:
-            print("Retornando _Returned:\n", _Returned)
-            return _Returned
+        Status_IntraCong = do_intra_congestion( Grid, ListaCongIntra, MaxItCongIntra,
+                                                in_node, StageNum, StageIndexesList,
+                                                CaseNum)
+        if Status_IntraCong:
+            print("**************************************")
+            print("Status_IntraCong:\n", Status_IntraCong)
+            print("**************************************")
+            return return_values(in_node, RelevantData, CaseNum, CaseID)
 
         """
               ###           #                    ###                                       #       #
@@ -192,6 +195,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
                                                                      #   #
                                                                       ###
         """
+        SubGrids = []
         if ListaCongInter:
             # Divide Grid in N SubGrids if there is inter-congestion
             SubGrids = divide_grid_by_intercongestion(Grid, ListaCongInter)
@@ -211,6 +215,15 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         PLoss = estimates_power_losses(Grid, method='linear')
         # PLoss = estimates_power_losses(Grid, method='cosine')
         print("PLoss:\n", PLoss)
+        # Before finishing correctly, saves the relevant data.
+        RelevantData[(StageNum, CaseNum)] = {
+            'Grid': Grid,
+            'MarginUnitIndx': MarginUnitIndx,
+            'ListaCongInter': ListaCongInter,
+            'SubGrids': SubGrids,
+            'TotalPowerCost': TotalPowerCost,
+            'PLoss': PLoss,
+        }
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         print("CaseNum:", CaseNum, "terminado exitosamente")
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
@@ -218,7 +231,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
     print("----------------------------")
     print("Este fue CaseNum:", CaseNum)
     print("----------------------------")
-    return return_values(in_node, CaseNum)
+    return return_values(in_node, RelevantData, CaseNum, CaseID)
 
 
 """
@@ -417,7 +430,7 @@ def do_intra_congestion(Grid, ListaCongIntra, MaxItCongIntra, in_node, StageNum,
             if (RE_Gen_kW > RE_MaxGen_kW) | (RE_Gen_kW < RE_MinGen_kW):
                 print("...Limites máximos de generador de referencia superados. {}>={}>={}".format(RE_MaxGen_kW, RE_Gen_kW, RE_MinGen_kW))
                 # finish function when outside limits
-                return return_values(in_node, CaseNum)
+                return -1
             print("Modifica ListaCongIntra según nuevo fpl")
             # checks for congestión again
             _, ListaCongIntra = aux_funcs__TipoCong(Grid, max_load=100)
@@ -429,7 +442,7 @@ def do_intra_congestion(Grid, ListaCongIntra, MaxItCongIntra, in_node, StageNum,
         print("Got out (break) of current stage because of MaxItCongIntra")
         # Enough time!! Go home.
         import pdb; pdb.set_trace()  # breakpoint 8ac2571a //
-        return return_values(in_node, CaseNum)
+        return -1
     return None
 
 
@@ -540,11 +553,12 @@ def estimates_power_losses(net, method='linear'):
         raise ValueError(msg)
 
 
-def return_values(in_node, CaseNum):
+def return_values(in_node, RelevantData, CaseNum, CaseID):
     if in_node:
-        # print("------------------\n Escribiendo archivo ficticio \n------------------")
+        print("------------------\n Escribiendo archivo ficticio \n------------------")
+        smcfpl__in_out_proc__write_output_case(RelevantData, CaseNum, CaseID)
         # with open(File_Caso + os__sep + '..' + os__sep + str(CaseNum), 'w') as f:
         #     f.write( "Este es caso " + str(CaseNum) )
         return None
     else:
-        return (CaseNum, {})
+        return (CaseNum, RelevantData)

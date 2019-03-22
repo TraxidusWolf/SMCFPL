@@ -1,46 +1,19 @@
+For later testing of simulation:
+ Test with dates out of simulation range:
+ ☐ Test with single maintenance line from '2018-06-12 00:00' to '2023-06-01 00:00' (shifter start date)
+ ☐ Test with single maintenance line from '2018-06-12 00:00' to '2024-01-01 00:00' (year out of expected values)
+ ✔ (works!) Test with single maintenance line from '2018-06-01 00:00' to '2023-05-31 23:00' (same dates as limits) @done (19-03-22 01:48)
+ ✔ (works lime single!) Test with double maintenance line from '2018-06-01 00:00' to '2023-05-31 23:00' (same dates as limits) @done (19-03-22 01:51)
 General:
  ☐ Dar opción al inicializar elementos: A través de archivos csv o planilla @created(18-11-29 17:06)
- ✔ Terminar lector entradas @created(18-11-23 14:35) @done (18-11-26 11:02)
- ✔ Crear serie de tiempo (dataframe) de la desviación mensual sistémica y luego a por etapa (para usarla para directamente a la BDxEtapa) @created(18-11-27 18:17) @done (18-11-28 16:22)
- ✔ Crear serie de tiempo (dataframe) de la tasa de crecimiento de la demanda de clientes libres y regulados (para usarla para directamente a la BDxEtapa) @created(18-11-27 18:17) @done (18-11-30 22:52)
- ✔ Crear rutina de creación de hidrología @created(18-11-27 18:08) @done (18-12-03 19:10)
- ✔ Crear rutina de creación de TSF proyectada @created(18-11-27 18:08) @done (18-12-04 17:12)
- ✔ Convertir BD mantenimientos a etapas @created(18-12-06 09:13) @done (18-12-06 09:13)
- ✔ Crear red pandapower por cada etapa, a partir de entradas @created(18-12-05 10:03) @done (18-12-11 17:13)
- ✔ Verificar que entrada falta por ocupar @created(18-12-04 17:13) @done (18-12-13 01:26)
- ✔ Utilizar todas las entradas esperadas... ¿¿¿problemas de lectura al mismo archivo en nodos paralelo???? No @created(18-12-04 17:12) @done (18-12-30 14:19)
- ✔ Crear archivo de envío a nodos de función de cálculo 'NucleoCalculo' @created(18-12-14 01:55) @done (18-12-16 18:27)
- ✔ Identificar las unidades que fallaron en la etapa @created(18-12-18 23:37) @done (18-12-30 14:13)
- ✔ Arreglar demandas nan 'Load 03' desde eta 8-15 en todos casos @created(18-12-30 14:13) @done (19-01-04 10:18)
- ✔ Para trabajo de nodos incorporar cambio de tercer argumento 'Grillas' de 'NucleoCalculo.py' @created(18-12-30 14:14) @done (19-01-04 10:18)
  ☐ Desarrollar y terminar el archivo 'NucleoCalculo' @created(18-12-14 01:56)
  ☐ En NucleoCalculo.Calcular() permitir uso un generador por grilla aislada @created(19-01-07 18:36)
- ☐ ¿Existe posibilidad de determinar grillas aisladas en PandaPower? @created(19-01-07 18:37)
- ✔ Crear base de datos de etapas en cada serie de etapas (i.e., cada caso) @created(18-11-23 14:35) @done (18-12-13 01:27)
- ✔ Crear iteradores de demanda @created(18-11-23 14:35) @done (18-12-19 10:40)
- ✔ Reparar Generador de demanda. Utilizar entrada ambos L y R para generar una tasa de crecimiento para cada indice la red @created(18-12-19 00:00) @done (18-12-19 10:40)
- ✔ Crear iteradores de generación @created(18-11-23 14:35) @done (18-12-19 00:00)
- ✔ Utilizar valores en por unidad para reducción de cálculos computacionales (lo hace pandapower para pf) @created(18-11-23 14:38) @done (18-12-30 14:19)
- ✔ Validar proceso de factibilidad Generación-Demanda en cada etapa renovable @created(18-11-23 14:47) @done (18-12-30 14:19)
- ☐ Lograr exitosa comunicación de smcfpl con pandapower @created(18-11-23 14:36)
  ☐ Crear rutina para calcular el costo marginal @created(18-11-23 14:47)
- ☐ Documentar todas las clases, métodos, funciones para posterior documentación (sphnix?) @created(18-11-23 14:39)
+ ☐ Documentar todas las clases, métodos, funciones para posterior documentación (sphnix-readthedocs) @created(18-11-23 14:39)
  ☐ Paralelizar resolución de casos (serie de etapas) en grupos de núcleos | la resolución por hidrología  @created(18-11-23 14:40)
- ☐ Implementar proceso de detección de congestiones tipo inter @created(18-11-23 14:50)
- ☐ Crear algoritmo de Factores de penalización con pandapower  @created(18-11-23 14:43)
- ☐ Implementar proceso de detección de congestiones tipo intra @created(18-11-23 14:50)
- ☐ ¿Incorporar a copia de pandapower la posibilidad de distintos cálculos de pérdidas? @created(18-11-23 14:49)
- ☐ Crear rutina de escritura de datos 'write_outputs.py' @created(18-11-23 14:51)
  ☐ validar implementación del modelo con el sistema de pruebas @created(18-11-23 14:44)
  ☐ Módulo/archivo base para resolución de cada serie de etapas (1 gen + 1 dem + 1 hid) @created(18-11-27 17:41)
-
-De 'read_inputs.py':
- ✔ leer entrada adicional: "in_smcfpl_ParamHidEmb" @created(18-11-23 14:28) @done (18-11-25 00:45)
- ✔ corroborar funcionamiento de lectura de todas las entradas @created(18-11-25 00:45) @done (18-11-25 00:49)
-
-De 'CrearElementos.py':
- ☐ Crear método de la clase BDxEtapa() @created(18-11-25 00:50)
- ☐ Crear función en mismo módulo para imprimir los archivos por cada etapa (todas) @created(18-11-27 17:42)
+ ☐ add beta version to PYPI. Release: 0.1.b1
 
 En Simulación:
   ☐ probar ventajas y problemas de definición de etapas (para obtención de datos temporales, rangos simulación)
@@ -49,3 +22,34 @@ En Simulación:
   ☐ probar ventajas y problemas de usar relación cota costo
   ☐ ubicación y magnitud de congestiones obtenidas
   ☐ metodología de ubicación del ESS
+
+
+＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+Archive:
+ ✔ Implementar proceso de detección de congestiones tipo intra @created(18-11-23 14:50) @done (19-03-22 01:17) @project(General)
+ ✔ Implementar proceso de detección de congestiones tipo inter @created(18-11-23 14:50) @done (19-03-22 01:17) @project(General)
+ ✔ Crear rutina de escritura de datos 'write_outputs.py' @created(18-11-23 14:51) @done (19-03-22 01:17) @project(General)
+ ✔ Crear algoritmo de Factores de penalización con pandapower  @created(18-11-23 14:43) @done (19-03-22 01:17) @project(General)
+ ✔ ¿Existe posibilidad de determinar grillas aisladas en PandaPower? @created(19-01-07 18:37) @done (19-03-22 01:16) @project(General)
+ ✔ Lograr exitosa comunicación de smcfpl con pandapower @created(18-11-23 14:36) @done (19-03-22 01:16) @project(General)
+ ✔ Para trabajo de nodos incorporar cambio de tercer argumento 'Grillas' de 'NucleoCalculo.py' @created(18-12-30 14:14) @done (19-01-04 10:18) @project(General)
+ ✔ Arreglar demandas nan 'Load 03' desde eta 8-15 en todos casos @created(18-12-30 14:13) @done (19-01-04 10:18) @project(General)
+ ✔ Validar proceso de factibilidad Generación-Demanda en cada etapa renovable @created(18-11-23 14:47) @done (18-12-30 14:19) @project(General)
+ ✔ Utilizar valores en por unidad para reducción de cálculos computacionales (lo hace pandapower para pf) @created(18-11-23 14:38) @done (18-12-30 14:19) @project(General)
+ ✔ Utilizar todas las entradas esperadas... ¿¿¿problemas de lectura al mismo archivo en nodos paralelo???? No @created(18-12-04 17:12) @done (18-12-30 14:19) @project(General)
+ ✔ Identificar las unidades que fallaron en la etapa @created(18-12-18 23:37) @done (18-12-30 14:13) @project(General)
+ ✔ Reparar Generador de demanda. Utilizar entrada ambos L y R para generar una tasa de crecimiento para cada indice la red @created(18-12-19 00:00) @done (18-12-19 10:40) @project(General)
+ ✔ Crear iteradores de demanda @created(18-11-23 14:35) @done (18-12-19 10:40) @project(General)
+ ✔ Crear iteradores de generación @created(18-11-23 14:35) @done (18-12-19 00:00) @project(General)
+ ✔ Crear archivo de envío a nodos de función de cálculo 'NucleoCalculo' @created(18-12-14 01:55) @done (18-12-16 18:27) @project(General)
+ ✔ Crear base de datos de etapas en cada serie de etapas (i.e., cada caso) @created(18-11-23 14:35) @done (18-12-13 01:27) @project(General)
+ ✔ Verificar que entrada falta por ocupar @created(18-12-04 17:13) @done (18-12-13 01:26) @project(General)
+ ✔ Crear red pandapower por cada etapa, a partir de entradas @created(18-12-05 10:03) @done (18-12-11 17:13) @project(General)
+ ✔ Convertir BD mantenimientos a etapas @created(18-12-06 09:13) @done (18-12-06 09:13) @project(General)
+ ✔ Crear rutina de creación de TSF proyectada @created(18-11-27 18:08) @done (18-12-04 17:12) @project(General)
+ ✔ Crear rutina de creación de hidrología @created(18-11-27 18:08) @done (18-12-03 19:10) @project(General)
+ ✔ Crear serie de tiempo (dataframe) de la tasa de crecimiento de la demanda de clientes libres y regulados (para usarla para directamente a la BDxEtapa) @created(18-11-27 18:17) @done (18-11-30 22:52) @project(General)
+ ✔ Crear serie de tiempo (dataframe) de la desviación mensual sistémica y luego a por etapa (para usarla para directamente a la BDxEtapa) @created(18-11-27 18:17) @done (18-11-28 16:22) @project(General)
+ ✔ Terminar lector entradas @created(18-11-23 14:35) @done (18-11-26 11:02) @project(General)
+ ✔ corroborar funcionamiento de lectura de todas las entradas @created(18-11-25 00:45) @done (18-11-25 00:49) @project(De 'read_inputs.py')
+ ✔ leer entrada adicional: "in_smcfpl_ParamHidEmb" @created(18-11-23 14:28) @done (18-11-25 00:45) @project(De 'read_inputs.py')
