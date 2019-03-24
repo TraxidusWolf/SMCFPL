@@ -8,6 +8,7 @@ from pandas import DataFrame as pd__DataFrame, date_range as pd__date_range, Ser
 from pandas import datetime as pd__datetime, set_option as pd__set_option
 from pandas import concat as pd__concat, Timedelta as pd__Timedelta
 from numpy import mean as np__mean, nan as np__NaN, arange as np__arange, bool_ as np__bool_
+from numpy import zeros as np__zeros
 from numpy.random import uniform as np_random__uniform, normal as np__random__normal
 from numpy.random import seed as np__random__seed
 from numpy.random import choice as np__random__choice
@@ -284,7 +285,7 @@ def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_
         :type seed: int
     """
     logger.debug("! entrando en función: 'Crea_hidrologias_futuras' (aux_funcs.py) ...")
-    np__random__seed()  # make is more random
+    np__random__seed()  # make it more random
     # calcula años en horizonte de simulación
     NAniosSimulacion = du__relativedelta(FechaFinSim, FechaIniSim).years + 2  # cuenta el primero y el último
     ListaAniosSim = [FechaIniSim.year + i for i in range(NAniosSimulacion)]
@@ -601,12 +602,18 @@ def GenHistorica_a_Etapa(DF_Etapas, DF_histsolar, DF_histeolicas):
             # Se normalizan potencias c/r al máximo total
             DF_ERNC = DF_ERNC.divide(MaximoAnual)
 
-            #
-            # Encuentra el promedio de los valores
-            Arr_Mean = DF_ERNC.mean(axis='index').values
-            Arr_Mean[Arr_Mean < 0] = 0  # asegura que no existe potencia negativa
-            # Encuentra la desviación estándar
-            Arr_Std = DF_ERNC.std(axis='index').values
+            # chekcs if only one row (otherwise nan are returned for std)
+            if DF_ERNC.shape[0] > 1:
+                # Encuentra el promedio de los valores
+                Arr_Mean = DF_ERNC.mean(axis='index').values
+                # Encuentra la desviación estándar
+                Arr_Std = DF_ERNC.std(axis='index').values
+            else:
+                # Encuentra el promedio de los valores
+                Arr_Mean = DF_ERNC.loc[DF_ERNC.index[0], :].values
+                # Encuentra la desviación estándar
+                Arr_Std = np__zeros(DF_ERNC.shape[1])  # If single evalues, means it is the only posible. Std = 0
+            Arr_Mean[Arr_Mean < 0] = 0  # makes sure there isn't negative mean for power
 
             # Asigna valores a los DataFrame de salida según la etapa
             if DF_ERNC.columns.tolist() == DF_histsolar.columns.tolist():
@@ -674,7 +681,7 @@ def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_Tas
                 2.4.- Agrega arreglo al DataFrame de Salida.
                 2.5.- Retorna la tupla (EtaNum 1-indexed, pandas DataFrame)
     """
-    np__random__seed()  # make is more random
+    np__random__seed()  # make it more random
     # Verifica que el largo de Etapas sean coincidentes, de lo contrario retorna ValueError
     if DF_TasaCLib.shape[0] != DF_TasaCReg.shape[0] != DF_DesvDec.shape[0] != len(DictTypoCargasEta):
         msg = "El numero de etapas en DF_TasaCLib, DF_TasaCReg y DF_DesvDec son diferentes del tamaño de DictTypoCargasEta."
@@ -744,7 +751,7 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
         :param seed: Sets the random number to be tha same always
         :type seed: int
     """
-    np__random__seed()  # make is more random
+    np__random__seed()  # make it more random
     # Corrobora que el largo de los parámetros de entrada (teóricamente el Número de etapas), sea igual. De lo contrario retorna ValueError
     if len(Dict_TiposGen) != DF_HistGenERNC[0].shape[0] != DF_HistGenERNC[1].shape[0] != DF_TSF.shape[0] != DF_PE_Hid.shape[0]:
         msg = "El numero de etapa en los parámetros de entrada no coinciden."
@@ -805,10 +812,10 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
                 msg = "NomERNC no es 'Solar' ni 'Eólico' de zona alguna!"
                 logger.error(msg)
                 raise ValueError(msg)
+
             # verifica que Power_pu sea positivo o cero, y limitado entre 0 y 1, inclusive
             Power_pu = 1.0 if Power_pu > 1 else 0 if Power_pu < 0 else Power_pu
             DF_IndGen_PDispatched.loc[DF_IndGen_PDispatched['type'] == NomERNC, 'PGen_pu'] = Power_pu
-
         # Para las tecnologías hidráulicas asigna promedio según PE y desv según parámetros 'DesvEstDespCenEyS' y 'DesvEstDespCenP'
         if len(IndGenEmb):  # EMBALSE
             if seed:

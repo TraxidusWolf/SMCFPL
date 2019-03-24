@@ -2,6 +2,7 @@ For later testing of simulation:
  Test with dates out of simulation range:
  ☐ Test with single maintenance line from '2018-06-12 00:00' to '2023-06-01 00:00' (shifter start date)
  ☐ Test with single maintenance line from '2018-06-12 00:00' to '2024-01-01 00:00' (year out of expected values)
+ ☐ Test with 'FechaTermino' over some month after it's finished. Should not creat Stage after end date.
  ✔ (works!) Test with single maintenance line from '2018-06-01 00:00' to '2023-05-31 23:00' (same dates as limits) @done (19-03-22 01:48)
  ✔ (works lime single!) Test with double maintenance line from '2018-06-01 00:00' to '2023-05-31 23:00' (same dates as limits) @done (19-03-22 01:51)
 General:

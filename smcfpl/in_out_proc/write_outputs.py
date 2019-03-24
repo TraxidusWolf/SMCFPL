@@ -35,7 +35,7 @@ def dump_BDs_to_pickle(Names_Variables, pathto='.', FileFormat='pickle'):
     if FileFormat == 'pickle':
         postfix = 'p'
     else:
-        raise IOError("'{}' format not implemented yet or des not exists.". format(FileFormat))
+        raise IOError("'{}' format not implemented yet or des not exists.".format(FileFormat))
 
     for name, var in Names_Variables.items():
         with open(pathto + os__sep + "{}.{}".format(name, postfix), 'wb') as f:
@@ -143,10 +143,8 @@ def write_BDs_input_case(instance, IdentificadorCaso, InputList):
     logger.info("Exportado del caso {} completado.".format(CasoNom))
 
 
-def write_output_case(RelevantData, CaseNum, CaseID):
+def write_output_case(RelevantData, CaseNum, CaseID, pathto='.'):
     """ Write to output directory one pickled file with available results.
-
-
     """
     CaseNom = "{0}_D{1}_G{2}".format( *CaseID )
-    dump_BDs_to_pickle({CaseNom: RelevantData}, pathto='.', format='pickle')  # try write to output folder
+    dump_BDs_to_pickle({CaseNom: RelevantData}, pathto=pathto, FileFormat='pickle')  # try write to output folder

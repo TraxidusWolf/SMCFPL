@@ -5,4 +5,5 @@ in_out_files/__pycache__/read_inputs.cpython-36.pyc
 build/
 dist/
 TempData/
+OutputData/
 smcfpl.egg-info/

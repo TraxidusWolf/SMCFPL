@@ -70,7 +70,7 @@ class Simulation(object):
             :type UsaSlurm: dict
 
         """
-        logger.debug("! inicializando clase Simulacion(...)  (CreaElementos.py)...")
+        logger.debug("! Initializating class Simulation(...)  (create_elements.py)...")
         STime = dt.now()
         #
         # Atributos desde entradas
@@ -106,7 +106,6 @@ class Simulation(object):
         self.TempFolderName = TempFolderName
         self.abs_path_temp = os__path__abspath(Working_dir + os__sep + TempFolderName)
         self.abs_path_smcfpl = os__path__abspath(smcfpl_dir)
-        self.DirSalidas = os__path__abspath(OutFilePath)
         self.abs_InFilePath = os__path__abspath(InFilePath)
         self.abs_OutFilePath = os__path__abspath(OutFilePath)
         if isinstance(UseRandomSeed, int) and not isinstance(UseRandomSeed, bool):
@@ -137,6 +136,7 @@ class Simulation(object):
         _ReturnedBD = None  # delete content for memory space
 
         if self.UseTempFolder and not self.BD_file_exists:
+            msg = "Writing databases to file as requested (UseTempFolder=True) "
             self.write_DataBases_to_pickle(self.abs_path_temp)
 
         print('self.BD_Etapas:\n', self.BD_Etapas)
@@ -154,16 +154,25 @@ class Simulation(object):
         self.DictTiposGenNoSlack = { k: d['ExtraData']['Tipos'] for k, d in self.BD_RedesXEtapa.items() }
         # # Obtiene Grillas de cada etapa en diccionario (1-indexed)
         # self.DictSEPBrutoXEtapa = {k: v['PandaPowerNet'] for k, v in self.BD_RedesXEtapa.items()}
+
+        # checks for existance of OutFilePath directory
+        if not os__path__isdir(self.abs_OutFilePath):
+            # if not, create it
+            msg = "'OutFilePath' directory does not exist. Creating it..."
+            logger.info(msg)
+            os__makedirs(self.abs_OutFilePath)
+
+        # Timing
         RunTime = dt.now() - STime
         minutes, seconds = divmod(RunTime.seconds, 60)
         hours, minutes = divmod(minutes, 60)
         msg = "Inicialization of Simulation class finished after {} [hr], {} [min] and {} [s].".format(
             hours, minutes, seconds + RunTime.microseconds * 1e-6)
         logger.info(msg)
-        logger.debug("! inicialización clase Simulacion(...) (CreaElementos.py) Finalizada!")
+        logger.debug("! Initialization class Simulation(...) Finished! (create_elements.py)")
 
     def run(self, delete_TempData_post=True):
-        logger.debug("Corriendo método Simulacion.run()...")
+        logger.debug("Running method Simulation.run()...")
         STime = dt.now()
 
         # Comienza con la ejecución de lo cálculos
@@ -338,6 +347,8 @@ class Simulation(object):
                     .- Resolución Etapas
             """
             logger.info("Solving cases in LOCAL MODE.")
+            # Total number of stages across the cases that converged to something
+            TotalSuccededStages = 0
             # Crea lista con hidrologías de interés en los datos
             ListaHidrologias = ['Humeda', 'Media', 'Seca']
 
@@ -357,8 +368,6 @@ class Simulation(object):
             #
             # Inicializa contador de casos
             ContadorCasos = 1
-            # Inicializa diccionario de casos completados
-            Dict_Casos = {}
             # Junta y escribe en sub-directorios cada caso (Serie de etapas) como un
             # directorio, el cual contiene las base de datos independientes (Grilla)
             for HidNom in ListaHidrologias:
@@ -406,7 +415,8 @@ class Simulation(object):
                                                                 self.MaxItCongIntra,
                                                                 ),
                                                               # No se pueden pasar argumentos en generadores en paralelo
-                                                              { 'DemGenerator_Dict': {k: v for k, v in PyGeneratorDemand},
+                                                              { 'abs_OutFilePath': self.abs_OutFilePath,
+                                                                'DemGenerator_Dict': {k: v for k, v in PyGeneratorDemand},
                                                                 'DispatchGenerator_Dict': {k: v for k, v in PyGeneratorDispatched},
                                                                 'in_node': False, 'CaseID': CaseIdentifier,
                                                                 }
@@ -414,31 +424,38 @@ class Simulation(object):
                                             )
                         else:
                             # (En serie) Aplica directamente para cada caso
-                            Dict_Casos[CaseIdentifier] = core_calc.calc( ContadorCasos, HidNom, self.BD_RedesXEtapa,
-                                                                         self.BD_Etapas.index, DF_ParamHidEmb_hid,
-                                                                         self.BD_seriesconf,
-                                                                         self.MaxNumVecesSubRedes, self.MaxItCongIntra,
-                                                                         self.abs_OutFilePath,
-                                                                         DemGenerator_Dict={k: v for k, v in PyGeneratorDemand},
-                                                                         DispatchGenerator_Dict={k: v for k, v in PyGeneratorDispatched},
-                                                                         in_node=False, CaseID=CaseIdentifier,
-                                                                         )
+                            NumSuccededStages = core_calc.calc( ContadorCasos, HidNom, self.BD_RedesXEtapa,
+                                                                self.BD_Etapas.index, DF_ParamHidEmb_hid,
+                                                                self.BD_seriesconf, self.MaxNumVecesSubRedes,
+                                                                self.MaxItCongIntra,
+                                                                abs_OutFilePath= self.abs_OutFilePath,
+                                                                DemGenerator_Dict={k: v for k, v in PyGeneratorDemand},
+                                                                DispatchGenerator_Dict={k: v for k, v in PyGeneratorDispatched},
+                                                                in_node=False, CaseID=CaseIdentifier,
+                                                                )
+                            TotalSuccededStages += NumSuccededStages
                         ContadorCasos += 1
 
             if bool(self.NumParallelCPU):  # En paralelo
                 print("Ejecutando paralelismo calculo SEPs...")
                 # Obtiene los resultados del paralelismo, en caso de existir
                 for result in Results:
+                    NumSuccededStages = result.get()
+                    TotalSuccededStages += NumSuccededStages
+                    # (CaseNum, RelevantData) = result.get()
                     # Ejecuta escribiendo a disco
-                    Dict_Casos[CaseIdentifier] = result.get()
+                    # Dict_Casos[CaseIdentifier] = RelevantData
 
+        TotalStagesCases = self.NEta * ContadorCasos
         RunTime = dt.now() - STime
         minutes, seconds = divmod(RunTime.seconds, 60)
         hours, minutes = divmod(minutes, 60)
-        msg = "Running {} cases finished after {} [hr], {} [min] and {} [s].".format(
-            ContadorCasos - 1, hours, minutes, seconds + RunTime.microseconds * 1e-6)
+        msg = "Finished successfully {} stages across {} cases ({:.2f}%), after {} [hr], {} [min] and {} [s].".format(
+            TotalSuccededStages, ContadorCasos - 1, TotalSuccededStages / TotalStagesCases,
+            hours, minutes, seconds + RunTime.microseconds * 1e-6)
         logger.info(msg)
-        logger.debug("Corrida método Simulacion.run() finalizada!")
+        logger.debug("Ran of method Simulation.run(...) finished!")
+        return None
 
     def ManageTempData(self, FileFormat):
         """ Manage the way to detect temp folder, in order to create temporarly files if requested or create them from scratch.
@@ -642,8 +659,9 @@ class Simulation(object):
                             'BD_ParamHidEmb': self.BD_ParamHidEmb,
                             'BD_seriesconf': self.BD_seriesconf,
                             }
-        smcfpl__in_out_proc__dump_BDs_to_pickle(Names_Variables, pathto=abs_path_temp, FileFormat=FileFormat)
-
+        smcfpl__in_out_proc__dump_BDs_to_pickle( Names_Variables,
+                                                 pathto=abs_path_temp,
+                                                 FileFormat=FileFormat)
 
 
 def Crea_Etapas(DF_MantBarras, DF_MantTx, DF_MantGen, DF_MantLoad, DF_Solar, DF_Eolicas, FechaComienzo, FechaTermino):
@@ -688,12 +706,12 @@ def Crea_Etapas(DF_MantBarras, DF_MantTx, DF_MantGen, DF_MantLoad, DF_Solar, DF_
     :param FechaTermino: Fecha y hora de la última hora de la simulación.
 
     """
-    logger.debug("! entrando en función: 'Crea_Etapas' (CreaElementos.py) ...")
+    logger.debug("! entrando en función: 'Crea_Etapas' (create_elements.py) ...")
     Etapas = Crea_Etapas_Topologicas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, FechaComienzo, FechaTermino)
     logger.info("Se crearon {} etapas topológicas.".format(Etapas.shape[0]))
     Etapas = Crea_Etapas_Renovables(Etapas, DF_Solar, DF_Eolicas)
     logger.info("Se creó un total de {} etapas.".format(Etapas.shape[0]))
-    logger.debug("! saliendo de función: 'Crea_Etapas' (CreaElementos.py) ...")
+    logger.debug("! saliendo de función: 'Crea_Etapas' (create_elements.py) ...")
     return Etapas
 
 
@@ -705,7 +723,7 @@ def Crea_Etapas_Topologicas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, F
         1.- Filtra y ordena en forma ascendente las fechas de los mantenimientos.
         2.- Con el DF_CambioFechas identifica y crea las etapas bajo dos Metodologías y la función 'aux_smcfpl.Crea_Etapas_desde_Cambio_Mant'.
     """
-    logger.debug("! entrando en función: 'Crea_Etapas_Topologicas' (CreaElementos.py) ...")
+    logger.debug("! entrando en función: 'Crea_Etapas_Topologicas' (create_elements.py) ...")
     # Juntar todos los cambios DE FECHAS en un único pandas series. (Inicializa única columna)
     DF_CambioFechas = pd__DataFrame(data=[FechaComienzo, FechaTermino], columns=[0])
     for df in (DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad):
@@ -719,8 +737,8 @@ def Crea_Etapas_Topologicas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, F
     # print('DF_CambioFechas:\n', DF_CambioFechas)
 
     Metodo_RefFila_EtaTopo = 2
-    print('Metodo_RefFila_EtaTopo:', Metodo_RefFila_EtaTopo)
-    logger.info("Utilizando Método {} para diferencia de filas en Creación Etapas Topológicas.".format(Metodo_RefFila_EtaTopo))
+    msg = "Utilizando Método {} para diferencia de filas en Creación Etapas Topológicas.".format(Metodo_RefFila_EtaTopo)
+    logger.info(msg)
     if Metodo_RefFila_EtaTopo == 1:
         """ Método 1: Metodo_RefFila_EtaTopo = 1 (Diferencia entre filas - referencia móvil)
         En caso de NO habilitarse 'ref_fija':
@@ -737,7 +755,7 @@ def Crea_Etapas_Topologicas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, F
 
         ¿Qué hace en el caso de existir una fecha con menos de un día c/r a fecha termino, sin previa etapa limitante?
         """
-        logger.debug("! saliendo de función: 'Crea_Etapas_Topologicas' (CreaElementos.py) ...")
+        logger.debug("! saliendo de función: 'Crea_Etapas_Topologicas' (create_elements.py) ...")
         return aux_smcfpl.Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref_fija=False)
     elif Metodo_RefFila_EtaTopo == 2:
         """ Método 2: Metodo_RefFila_EtaTopo (Diferencia respecto fila referencia)
@@ -755,10 +773,10 @@ def Crea_Etapas_Topologicas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, F
 
         ¿Qué hace en el caso de existir una fecha con menos de un día c/r a fecha termino, sin previa etapa limitante?
         """
-        logger.debug("! saliendo de función: 'Crea_Etapas_Topologicas' (CreaElementos.py) ...")
+        logger.debug("! saliendo de función: 'Crea_Etapas_Topologicas' (create_elements.py) ...")
         return aux_smcfpl.Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref_fija=True)
     else:
-        msg = "Método_RefFila_EtaTopo No fue ingresado válidamente en función 'Crea_Etapas_Topologicas' (CreaElementos.py)."
+        msg = "Método_RefFila_EtaTopo No fue ingresado válidamente en función 'Crea_Etapas_Topologicas' (create_elements.py)."
         logger.error(msg)
         raise ValueError(msg)
 
@@ -781,7 +799,7 @@ def Crea_Etapas_Renovables(Etapas, DF_Solar, DF_Eolicas):
         Retorna un pandas DataFrame con columnas: 'FechaIni_EtaTopo', 'FechaFin_EtaTopo', 'HoraDiaIni', 'HoraDiaFin', 'TotalHoras'; e índice
         del numero de cada etapa.
     """
-    logger.debug("! entrando en función: 'Crea_Etapas_Renovables' (CreaElementos.py) ...")
+    logger.debug("! entrando en función: 'Crea_Etapas_Renovables' (create_elements.py) ...")
     # inicializa DataFrame de salida
     DF_Eta = pd__DataFrame(columns=['FechaIni_EtaTopo', 'FechaFin_EtaTopo', 'HoraDiaIni', 'HoraDiaFin', 'TotalHoras'])
     # print('Etapas:\n', Etapas)
@@ -873,7 +891,7 @@ def Crea_Etapas_Renovables(Etapas, DF_Solar, DF_Eolicas):
     DF_Eta.index += 1
     DF_Eta.index.name = 'EtaNum'
 
-    logger.debug("! saliendo de función: 'Crea_Etapas_Renovables' (CreaElementos.py) ...")
+    logger.debug("! saliendo de función: 'Crea_Etapas_Renovables' (create_elements.py) ...")
     return DF_Eta
 
 

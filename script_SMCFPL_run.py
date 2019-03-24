@@ -29,13 +29,14 @@ Sim = smcfpl.Simulation(
     DesvEstDespCenEyS = 0.1,  # desviación estándar considerada para el despacho de centrales Embalse y Serie
     DesvEstDespCenP = 0.2,  # desviación estándar considerada para el despacho de centrales Pasada
     NumParallelCPU = False,  # Puede ser False: No usa paralelismo ni lectura ni cálculo, 'Max' para
+    # NumParallelCPU = 'Max',  # Puede ser False: No usa paralelismo ni lectura ni cálculo, 'Max' para
     # utilizar todos lo procesadores fisicos, o un integer para modificar el tamaño de la pool
     UsaSlurm=False,
     # UsaSlurm = dict(NumNodos=2, NodeWaittingTime=dt.timedelta(seconds=10), ntasks=1, cpu_per_tasks=2),  # False para no ser considerado
     Working_dir = '.',
-    UseTempFolder = True,
-    RemovePreTempData = False,  # only considered if UseTempFolder == True
-    UseRandomSeed=4,
+    UseTempFolder = True,  # create a folder called 'TempData' in 'Working_dir'.
+    RemovePreTempData = False,  # only considered if UseTempFolder == True. Beware! 'TempData' directory will be completyle errased.
+    UseRandomSeed=4,  # set randomness to predictable value (always same result)
 )
 
 # Simulacion.run(delete_TempData=False)
