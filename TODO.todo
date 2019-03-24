@@ -5,6 +5,7 @@ For later testing of simulation:
  ☐ Test with 'FechaTermino' over some month after it's finished. Should not creat Stage after end date.
  ✔ (works!) Test with single maintenance line from '2018-06-01 00:00' to '2023-05-31 23:00' (same dates as limits) @done (19-03-22 01:48)
  ✔ (works lime single!) Test with double maintenance line from '2018-06-01 00:00' to '2023-05-31 23:00' (same dates as limits) @done (19-03-22 01:51)
+ ☐ Does input table accept Pmin generator as negative number
 General:
  ☐ Dar opción al inicializar elementos: A través de archivos csv o planilla @created(18-11-29 17:06)
  ☐ Desarrollar y terminar el archivo 'NucleoCalculo' @created(18-12-14 01:56)

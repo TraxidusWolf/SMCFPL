@@ -3,10 +3,12 @@
 from os import makedirs as os__makedirs
 from os import sep as os__sep
 from os.path import exists as os__path__exists
+from os.path import isfile as os__path__isfile
 from json import dump as json__dump
 from pandapower import to_pickle as pp__to_pickle
 from pandas import DataFrame as pd__DataFrame
-from pickle import HIGHEST_PROTOCOL as pickle__HIGHEST_PROTOCOL, dump as pickle__dump
+from pickle import HIGHEST_PROTOCOL as pickle__HIGHEST_PROTOCOL
+from pickle import dump as pickle__dump, load as pickle__load
 import smcfpl.aux_funcs as aux_smcfpl
 
 
@@ -38,7 +40,21 @@ def dump_BDs_to_pickle(Names_Variables, pathto='.', FileFormat='pickle'):
         raise IOError("'{}' format not implemented yet or des not exists.".format(FileFormat))
 
     for name, var in Names_Variables.items():
-        with open(pathto + os__sep + "{}.{}".format(name, postfix), 'wb') as f:
+        FullPathFile = pathto + os__sep + "{}.{}".format(name, postfix)
+        if os__path__isfile(FullPathFile):
+            msg = "File {} already exists.".format(FullPathFile)
+            with open(FullPathFile, 'rb') as f:
+                DictTupled = pickle__load(f)
+            if isinstance(DictTupled, dict):
+                # always use new generated data
+                DictTupled.update(var)
+                var = DictTupled
+                msg += "Updating it."
+            else:
+                msg += "Overwriting it."
+            logger.warn(msg)
+
+        with open(FullPathFile, 'wb') as f:
             pickle__dump(var, f, pickle__HIGHEST_PROTOCOL)
 
 

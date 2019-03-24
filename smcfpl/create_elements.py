@@ -110,6 +110,8 @@ class Simulation(object):
         self.abs_OutFilePath = os__path__abspath(OutFilePath)
         if isinstance(UseRandomSeed, int) and not isinstance(UseRandomSeed, bool):
             self.UseRandomSeed = UseRandomSeed
+        elif isinstance(UseRandomSeed, bool):
+            self.UseRandomSeed = None
         else:
             msg = "'UseRandomSeed' must be an integer."
             raise IOError(msg)
@@ -359,7 +361,7 @@ class Simulation(object):
                     Ncpu = self.NumParallelCPU
                 elif self.NumParallelCPU == 'Max':
                     Ncpu = mu__cpu_count()
-                logger.info("Escribiendo en paralelo. Utilizando máximo {} procesos simultáneos.".format(Ncpu))
+                logger.info("Parallel mode activated. Using maximum of {} simultaneous processes.".format(Ncpu))
                 Pool = mu__Pool(Ncpu)
                 Results = []
 
@@ -450,9 +452,12 @@ class Simulation(object):
         RunTime = dt.now() - STime
         minutes, seconds = divmod(RunTime.seconds, 60)
         hours, minutes = divmod(minutes, 60)
-        msg = "Finished successfully {} stages across {} cases ({:.2f}%), after {} [hr], {} [min] and {} [s].".format(
-            TotalSuccededStages, ContadorCasos - 1, TotalSuccededStages / TotalStagesCases,
-            hours, minutes, seconds + RunTime.microseconds * 1e-6)
+        msg = "Finished successfully {}/{} stages ({:.2f}%) across {} cases of {} stages, "
+        msg += "after {} [hr], {} [min] and {} [s]."
+        msg = msg.format( TotalSuccededStages, TotalStagesCases,
+                          TotalSuccededStages / TotalStagesCases * 100,
+                          ContadorCasos - 1, self.NEta,
+                          hours, minutes, seconds + RunTime.microseconds * 1e-6)
         logger.info(msg)
         logger.debug("Ran of method Simulation.run(...) finished!")
         return None

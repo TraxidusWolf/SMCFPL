@@ -181,11 +181,10 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
                                                     in_node, StageNum, StageIndexesList,
                                                     CaseNum)
             if Status_IntraCong:  # == -1
-                print("**************************************")
                 print("Status_IntraCong:\n", Status_IntraCong)
                 print("**************************************")
-                write_values_and_finish( in_node, RelevantData, CaseNum, CaseID,
-                                         outputDir=abs_OutFilePath)
+                continue  # nothing valueble to return
+                # write_values_and_finish( in_node, RelevantData, CaseNum, CaseID, outputDir=abs_OutFilePath)
 
         """
               ###           #                    ###                                       #       #
@@ -207,7 +206,6 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
 
         # (Multiplica dos pandas Series) Indices
         # son creados secuencialmente, por lo que no necesita ser DataFrame
-        import pdb; pdb.set_trace()  # breakpoint 92e62052 //
         pdSeries_CostDispatch = Dict_ExtraData['CVarGenNoRef'].squeeze() * -Grid['gen']['p_kw']  # en [$US]
 
         #
@@ -229,14 +227,15 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             'PLoss': PLoss,
         }
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        print("CaseNum:", CaseNum, "terminado exitosamente")
+        print("StageNum:", StageNum, "terminado exitosamente")
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        write_values_and_finish(in_node, RelevantData, CaseNum, CaseID, outputDir=abs_OutFilePath)
         SuccededStages += 1
 
     print("----------------------------")
     print("Este fue CaseNum:", CaseNum)
     print("----------------------------")
+    if RelevantData:  # if it's not empty
+        write_values_and_finish(in_node, RelevantData, CaseNum, CaseID, outputDir=abs_OutFilePath)
     return SuccededStages
 
 
@@ -422,7 +421,6 @@ def do_intra_congestion(Grid, ListaCongIntra, MaxItCongIntra, in_node, StageNum,
                 msg = "Límite de MaxItCongIntra alcanzado en etapa {}/{} del caso {}!.".format(
                     StageNum, len(StageIndexesList), CaseNum)
                 logger.warn(msg)
-                import pdb; pdb.set_trace()  # breakpoint 9a7f8ec5 //
                 break
 
         else:  # if for not break then:
@@ -447,7 +445,6 @@ def do_intra_congestion(Grid, ListaCongIntra, MaxItCongIntra, in_node, StageNum,
         break
         print("Got out (break) of current stage because of MaxItCongIntra")
         # Enough time!! Go home.
-        import pdb; pdb.set_trace()  # breakpoint 8ac2571a //
         return -1
     return None
 
