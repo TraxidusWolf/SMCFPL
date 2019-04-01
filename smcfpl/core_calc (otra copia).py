@@ -27,31 +27,11 @@ from smcfpl.redispatch import redispatch as redispatch__redispatch, make_Bbus_Bp
 from smcfpl.redispatch import power_over_congestion as redispatch__power_over_congestion
 from smcfpl.smcfpl_exceptions import *
 
+
 import logging
-
-
-def setup_logger(logger_name, log_file='.', level=logging.DEBUG):
-    """ If log_file is declared (different than '.') log file is used.
-    """
-    logg = logging.getLogger(logger_name)
-    formatter = logging.Formatter('[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s')
-    if log_file != '.':
-        fileHandler = logging.FileHandler(log_file, mode='w')
-        fileHandler.setFormatter(formatter)
-        logg.addHandler(fileHandler)
-    streamHandler = logging.StreamHandler()
-    streamHandler.setFormatter(formatter)
-
-    logg.setLevel(level)
-    logg.addHandler(streamHandler)
-
-
-# create logger
-setup_logger('stdout_only')
-setup_logger('Intra_congestion', r'IntraCongs.log')
-# get loggers created
-logger = logging.getLogger('stdout_only')
-logger_IntraCong = logging.getLogger('Intra_congestion')
+logging.basicConfig(level=logging.DEBUG,
+                    format="[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s")
+logger = logging.getLogger()
 
 
 def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
@@ -101,7 +81,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
     RelevantData = {}
     print("Hidrology:", Hidrology)
     # for each stage in the case
-    for (StageNum, DF_Dem), (StageNum, DF_Gen) in zip(DemGenerator, DispatchGenerator):
+    for StageNum in StageIndexesList:
         print("StageNum:", StageNum, "CaseNum:", CaseNum)
         if in_node:
             # Load Data from every stage when 'in_node' is True
@@ -124,8 +104,8 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         else:
             # Carga la grilla y extradata con valores actualizados
             Grid, Dict_ExtraData = UpdateGridPowers( Grillas, StageNum,
-                                                     DF_Dem,
-                                                     DF_Gen)
+                                                     DemGenerator_Dict,
+                                                     DispatchGenerator_Dict)
 
         #
         # Verifica que el balance de potencia es posible en la etapa del caso (Gen-Dem)
@@ -204,24 +184,19 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
                                      MaxItCongIntra, in_node,
                                      StageNum, StageIndexesList,
                                      CaseNum)
-            except IntraCongestionIterationExceeded as e:
+            except IntraCongestionIterationExceeded:
                 print("**************************************")
-                print(" You got an Exception: {}! Moving to next stage.".format(e))
-                print("**************************************")
-                continue  # nothing valueble to return, jump to next stage
-            except CapacityOverloaded as e:
-                print("**************************************")
-                print(" You got an Exception: {}! Moving to next stage.".format(e))
+                print(" You got an Exception! Moving to next stage.")
                 print("**************************************")
                 continue  # nothing valueble to return, jump to next stage
-            except (GeneratorReferenceOverloaded, GeneratorReferenceUnderloaded) as e:
+            except CapacityOverloaded:
                 print("**************************************")
-                print(" You got an Exception: {}! Moving to next stage.".format(e))
+                print(" You got an Exception! Moving to next stage.")
                 print("**************************************")
                 continue  # nothing valueble to return, jump to next stage
-            # except Exception as e:
-            #     print("Exception was:", e)
-            #     continue
+            except Exception as e:
+                print("Exception was:", e)
+                continue
 
         """
               ###           #                    ###                                       #       #
@@ -291,18 +266,17 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
 """
 
 
-def UpdateGridPowers(Grillas, StageNum, DF_Dem, DF_Gen):
-    """
-        :type StageNum: int
-        :type DF_Dem: pandas DataFrame
-        :type DF_Gen: pandas DataFrame
-    """
+def UpdateGridPowers(Grillas, StageNum, DemGenerator_Dict, DispatchGenerator_Dict):
     Grid = Grillas[StageNum]['PandaPowerNet']
     Dict_ExtraData = Grillas[StageNum]['ExtraData']
+    D = DemGenerator_Dict[StageNum]  # pandas DataFrame
+    # print("D:", D)
+    G = DispatchGenerator_Dict[StageNum]  # pandas DataFrame
+    # print("G:", G)
     # D['PDem_pu'].values: puede ser negativo, positivo o cero, pero siempre en [p.u.]
-    Grid['load']['p_kw'] = Grid['load']['p_kw'] * DF_Dem['PDem_pu'].values
+    Grid['load']['p_kw'] = Grid['load']['p_kw'] * D['PDem_pu'].values
     # G['PGen_pu'].values: siempre va a estar entre 0 y 1 inclusive
-    Grid['gen']['p_kw'] = Grid['gen']['max_p_kw'] * DF_Gen['PGen_pu'].values
+    Grid['gen']['p_kw'] = Grid['gen']['max_p_kw'] * G['PGen_pu'].values
     return Grid, Dict_ExtraData
 
 
@@ -469,9 +443,6 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, in
         print("******")
         print("IntraCounter:", IntraCounter)
         print("******")
-        loading_percent = Grid['res_' + TypeElmnt].at[IndTable, 'loading_percent']
-        msg = ','.join( [str(StageNum), str(CaseNum), TypeElmnt, str(IndTable), str(loading_percent)])
-        logger_IntraCong.info(msg)
 
         if IntraCounter >= MaxItCongIntra:
             # limit of IntraCongestion is reached

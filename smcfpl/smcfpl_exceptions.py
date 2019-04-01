@@ -26,3 +26,18 @@ class FalseCongestion(Exception):
 class FolderDoesNotExist(Exception):
     """ Used to alert of existance of folder. """
     pass
+
+
+class IntraCongestionIterationExceeded(Exception):
+    """ Used to alert of iteration counter of intracongestions redipatch exceeded MaxItCongIntra. """
+    pass
+
+
+class GeneratorReferenceOverloaded(Exception):
+    """ Used to alert of Generator of reference should dispatch more power than available. """
+    pass
+
+
+class GeneratorReferenceUnderloaded(Exception):
+    """ Used to alert of Generator of reference should dispatch less power than possible. """
+    pass

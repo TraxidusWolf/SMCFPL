@@ -5,7 +5,7 @@ For later testing of simulation:
  ☐ Test with 'FechaTermino' over some month after it's finished. Should not creat Stage after end date.
  ✔ (works!) Test with single maintenance line from '2018-06-01 00:00' to '2023-05-31 23:00' (same dates as limits) @done (19-03-22 01:48)
  ✔ (works lime single!) Test with double maintenance line from '2018-06-01 00:00' to '2023-05-31 23:00' (same dates as limits) @done (19-03-22 01:51)
- ☐ Does input table accept Pmin generator as negative number
+ ☐ Does input table accept Pmin generator as negative number?
 General:
  ☐ Dar opción al inicializar elementos: A través de archivos csv o planilla @created(18-11-29 17:06)
  ☐ Desarrollar y terminar el archivo 'NucleoCalculo' @created(18-12-14 01:56)
@@ -16,6 +16,9 @@ General:
  ☐ validar implementación del modelo con el sistema de pruebas @created(18-11-23 14:44)
  ☐ Módulo/archivo base para resolución de cada serie de etapas (1 gen + 1 dem + 1 hid) @created(18-11-27 17:41)
  ☐ add beta version to PYPI. Release: 0.1.b1
+ ☐ Adapt scmfpl version to pandapower 2.0
+ ☐ Add flexibility to expand to multiple hidrologies. (restriction on corresponding input data)
+ ☐ Include arguments type filtering of all arguments.
 
 En Simulación:
   ☐ probar ventajas y problemas de definición de etapas (para obtención de datos temporales, rangos simulación)

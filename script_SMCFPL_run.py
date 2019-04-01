@@ -17,7 +17,7 @@ Sim = smcfpl.Simulation(
     OutFilePath = OutFilePath,
     Sbase_MVA = 100,
     MaxNumVecesSubRedes = 1,  # maximun number allowed up to create sub-nets from Inter-Congestions
-    MaxItCongIntra = 20,
+    MaxItCongIntra = 10,
     FechaComienzo = '2018-06-01 00:00',  # formato "%Y-%m-%d %H:%M"
     FechaTermino = '2023-05-31 23:00',  # formato "%Y-%m-%d %H:%M"
     NumVecesDem = 2,
@@ -28,17 +28,17 @@ Sim = smcfpl.Simulation(
     PEHidHum = 0.2,  # 0 <= (float) <= 1
     DesvEstDespCenEyS = 0.1,  # desviación estándar considerada para el despacho de centrales Embalse y Serie
     DesvEstDespCenP = 0.2,  # desviación estándar considerada para el despacho de centrales Pasada
-    NumParallelCPU = False,  # Puede ser False: No usa paralelismo ni lectura ni cálculo, 'Max' para
-    # NumParallelCPU = 'Max',  # Puede ser False: No usa paralelismo ni lectura ni cálculo, 'Max' para
+    NumParallelCPU = None,  # Puede ser None: No usa paralelismo en escritura ni lectura ni cálculo, 'Max' para
+    # NumParallelCPU = 'Max',  # Puede ser False: No usa paralelismo en escritura ni lectura ni cálculo, 'Max' para
     # utilizar todos lo procesadores fisicos, o un integer para modificar el tamaño de la pool
     UsaSlurm=False,
     # UsaSlurm = dict(NumNodos=2, NodeWaittingTime=dt.timedelta(seconds=10), ntasks=1, cpu_per_tasks=2),  # False para no ser considerado
     Working_dir = '.',
     UseTempFolder = True,  # create a folder called 'TempData' in 'Working_dir'.
     RemovePreTempData = False,  # only considered if UseTempFolder == True. Beware! 'TempData' directory will be completyle errased.
-    # UseRandomSeed=4,  # set randomness to predictable value (always same result) or None
-    UseRandomSeed=False,  # set randomness to predictable value (always same result) or None
+    UseRandomSeed = 42_468,  # set randomness to predictable value (always same result) or None
+    # UseRandomSeed = None,  # set randomness to predictable value (always same result) or None
 )
 
 # Simulacion.run(delete_TempData=False)
-Sim.run(delete_TempData_post = False)
+Sim.run()

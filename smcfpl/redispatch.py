@@ -16,6 +16,7 @@ from numpy import uint8, uint32, uint64, int8, int32, int64
 from numpy import repeat as np__repeat, unique as np__unique
 from numpy import nonzero as np__nonzero, isnan as np__isnan
 from numpy import argwhere as np__argwhere, seterr as np__seterr
+from numpy import copy as np__copy
 import logging
 
 # custom module
@@ -47,7 +48,8 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
         objeto en si!
 
         El delta de potencia sobrante en la línea congestionada se transfiere (incrementado en
-        un 5% del flujo permitido - por aproximación de FPL) de la unidad que más aporta al flujo
+        un 12% (default) del flujo permitido - por linealización y aproximación del punto de operación. Notar que
+        es un valor arbitrario, pero otorga buenos resultados) de la unidad que más aporta al flujo
         según los FUPTG a la que menos aporta (o en su defecto realiza más flujo contrario).
 
         En caso de no poder transferir generación a dicha unidad, la potencia se va repartiendo
@@ -60,7 +62,7 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
         Realiza un proceso iterativo hasta que la POTENCIA de la rama 'BranchIndTable' es igual o
         menor al límite.
 
-        Return None (inplace modification)
+        Return None (inplace power Grid generation modification)
 
         Syntax:
             redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100)
@@ -88,95 +90,139 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
                                                                           RefBus,
                                                                           decs=decs,
                                                                           FUTP_cf=False)  # no correction flow
-
+    # Find the Non ERNC unit, so they can not change power dispatched
+    ListaERNC = ['Solar', 'EólicaZ1', 'EólicaZ2', 'EólicaZ3', 'EólicaZ4']  # hard coded, MUST CHANGE!
+    FUPTG_GenGridNonERNCIndx, NonERNCIndx_GenFUPTG = gen_grid_indx_Non_ERNC_from_FUPTG( Grid.gen,
+                                                                                        ListaERNC,
+                                                                                        IndGenRef_GBusMat,
+                                                                                        FUPTG.shape[1])
+    # FUPTG_GenGridIndices = gen_grid_indx_from_FUPTG(Grid.gen, IndGenRef_GBusMat, FUPTG.shape[1])
     # Get the row of the branch of interest from matrices (according to IndxBrnchElmnts and input argument)
     TheRowBrnchIndMat = IndxBrnchElmnts[TypeElmnt][BranchIndTable]  # asume elementos de tabla ordenados secuencialmente según tablas Grid
     ### (Por ahora) Uses FUPTG to determine the most and least participation generators on line flow
     # Obtiene el máximo y el mínimo de fila de la rama en cuestión
     RowValues = FUPTG[TheRowBrnchIndMat, :]
-    print("RowValues:", RowValues)
-
-    # identifica valores del más al menos influyente en valor absoluto
-    IndxSorted = abs(RowValues).argsort()[::-1]  # [::-1] is reversed
-    print("IndxSorted:", IndxSorted)
+    # print("IndGenRef_GBusMat:", IndGenRef_GBusMat)
+    # print("FUPTG_GenGridNonERNCIndx:", FUPTG_GenGridNonERNCIndx)
+    # print("FUPTG_GenGridIndices:", FUPTG_GenGridIndices)
+    # print("RowValues:", RowValues)
 
     # calcula la potencia sobrante
-    OverloadP_kW, loading_percent = power_over_congestion(Grid,
-                                                          TypeElmnt,
-                                                          BranchIndTable,
-                                                          max_load_percent)
+    OverloadP_kW, loading_percent = power_over_congestion( Grid,
+                                                           TypeElmnt,
+                                                           BranchIndTable,
+                                                           max_load_percent,
+                                                           IncreaseFlow=0.12)
+    print("OverloadP_kW:", OverloadP_kW)
+    print("loading_percent:", loading_percent)
     if (OverloadP_kW <= 0) :  # & (loading_percent < max_load_percent) ?
         # here catch negative o zero value "DiffPower"
         msg = "Branch '{}' wasn't really congested ({:.4f} %)".format(TypeElmnt, loading_percent)
         logger.error(msg)
         raise FalseCongestion(msg)
 
-    # Get all generator indices from Grid.gen to get their power limits
-    Indices_GridGen = Grid['gen'].index
-    count = 0  # requiere to call generators and skip the reference one
-    for ind in IndxSorted:
-        print("ind:", ind)
-        # iterates over decreasing (absolute) ordered FUPTG of branch
-        ValInd = RowValues[ind]  # value of FUPTG associated
-        # jumps if reaches reference generators
-        if ind == IndGenRef_GBusMat:
-            # nothing to modify here (Reference moves alone)
-            continue
-        # Skip values if any of the rows has NaN
-        if np__isnan( ValInd ).any():
-            continue
-        IndxGenGrid = Indices_GridGen[count]  # generator index of pandas table
-        print("ValInd:", ValInd)
-        # determina si debe disminuir la potencia o aumentar en el generador
-        if ValInd >= 0:  # This generator should reduce it's power (FUPTG >= 0)
-            LimitekW = abs(Grid['gen'].at[IndxGenGrid, 'min_p_kw'])
-            CurrentPowerkW = abs(Grid['gen'].at[IndxGenGrid, 'p_kw'])
-            # calculates delta power available to reduce
-            DeltaPAvail_kW = CurrentPowerkW - LimitekW
-            # calculate new power to give to generator
-            NewPowerkW = DeltaPAvail_kW - OverloadP_kW
+    # normalization about sumation of absolute values
+    RowValuesNorm = RowValues / abs(RowValues).sum()  # abs(RowValuesNorm).sum() == 1
+    # print("RowValuesNorm:", RowValuesNorm)
 
-        else:   # This generator should increase it's power (FUPTG < 0)
-            LimitekW = abs(Grid['gen'].at[IndxGenGrid, 'max_p_kw'])
-            CurrentPowerkW = abs(Grid['gen'].at[IndxGenGrid, 'p_kw'])
-            # calculates delta power available to increase
-            DeltaPAvail_kW = LimitekW - CurrentPowerkW
-            # calculate new power to give to generator
-            NewPowerkW = DeltaPAvail_kW - OverloadP_kW
+    # creates vector of new power value expected to generators
+    Power2Change_kW = -RowValuesNorm[FUPTG_GenGridNonERNCIndx] * OverloadP_kW
 
-        print("IndxGenGrid:", IndxGenGrid)
-        print("Grid['gen'].at[IndxGenGrid, 'name']:", Grid['gen'].at[IndxGenGrid, 'name'])
-        print("OverloadP_kW:", OverloadP_kW)
-        print("LimitekW:", LimitekW)
-        print("CurrentPowerkW:", CurrentPowerkW)
-        print("DeltaPAvail_kW:", DeltaPAvail_kW)
-        print("NewPowerkW:", NewPowerkW)
-        print()
-        if DeltaPAvail_kW <= 0 :  # is it possible? Yes, at maximum dispatch
-            # no power available to reduce in this generator
-            continue
-        elif NewPowerkW < 0:
-            # generator should reduce more than available
-            OverloadP_kW -= DeltaPAvail_kW
-            NewPowerkW = LimitekW
-        else:  # NewPowerkW >= 0
-            OverloadP_kW -= DeltaPAvail_kW
-        print("OverloadP_kW:", OverloadP_kW)
-        print("NewPowerkW:", NewPowerkW)
-        Grid['gen'].at[IndxGenGrid, 'p_kw'] = -NewPowerkW
-        print()
-        print()
+    # Finds the limits and actual power
+    MaxGen_kW = abs(Grid['gen'].loc[NonERNCIndx_GenFUPTG, 'max_p_kw'].values)
+    MinGen_kW = abs(Grid['gen'].loc[NonERNCIndx_GenFUPTG, 'min_p_kw'].values)
+    ActualGen_kW = abs(Grid['res_gen'].loc[NonERNCIndx_GenFUPTG, 'p_kw'].values)
+    # print("MaxGen_kW:", MaxGen_kW)
+    # print("MinGen_kW:", MinGen_kW)
+    # print("ActualGen_kW:", ActualGen_kW)
 
-        # determina condición de salida. O que se acaben los generadores
-        if OverloadP_kW <= 0:
-            # congestion already disipated
+    # Calculates new power to dispatch
+    NewPower_kW = ActualGen_kW + Power2Change_kW
+
+    # Do redispatch at least once
+    PossibleRedispath = True
+    # MoreGenerationPossible = LessGenerationPossible = True
+    while PossibleRedispath:
+        """ Loop requiered when maximun or minimum power of units are reached.
+            Three possible exit condictions:
+            1.- Not enough generation available to redispatch at maximum power.
+            2.- Not enough generation available to redispatch at minimum power.
+            3.- Redispatch worked successfully.
+
+            In order to each, it's requiered:
+                1.- AvailablePower2Increase.sum() < 0: NewPower expected to dispatch is greater than MaxPower
+                2.- AvailablePower2Decrease.sum() < 0: NewPower expected to dispatch is smaller than MinPower
+                3.- (not SomeGenOverloaded) and (not SomeGenUnderloaded): No generation limits were reached
+            Note, while loop will continue as long there was a limit reached.
+        """
+        # CHECKS IF POWERS LIMITS ARE REACHED for each generator. Assumes same order from FUPTG columns
+        # print("NewPower_kW:", NewPower_kW)
+        SomeGenOverloaded = any( NewPower_kW > MaxGen_kW )
+        SomeGenUnderloaded = any( MinGen_kW > NewPower_kW )
+        if SomeGenOverloaded:
+            msg = "Some generators got overloaded (SomeGenOverloaded: {}).".format(SomeGenOverloaded)
+            logger.warn(msg)
+            # finds if available power can be increased on generators, if not calc new powers
+            AvailablePower2Increase = MaxGen_kW - NewPower_kW
+            AvailablePower2Increase[AvailablePower2Increase < 0] = 0  # clean those over the maximum
+            # if no more possible set LessGenerationPossible = False
+            if AvailablePower2Increase.sum() < 0:
+                msg = "No more generation can be increases."
+                logger.warn(msg)
+                # LessGenerationPossible = False
+                PossibleRedispath = False
+                break  # break while
+            # calculate power left
+            DeltaP_kW = NewPower_kW - MaxGen_kW
+            DeltaP_kW[DeltaP_kW < 0] = 0
+            DeltaP_kW = DeltaP_kW.sum()
+            # get inidices of limited units
+            IndxLimitedUnits = NewPower_kW > MaxGen_kW
+            IndxNonLimitedUnits = NewPower_kW <= MaxGen_kW
+            # fix to limit values
+            NewPower_kW[IndxLimitedUnits] = MaxGen_kW[IndxLimitedUnits]
+            # calculates weights for others generators to split the OverloadP_kW
+            NewWeights = RowValuesNorm[FUPTG_GenGridNonERNCIndx][IndxNonLimitedUnits]
+            # split power acorss other generators accordingly to FUPTG factors. Preserves the sign.
+            NewPower_kW[IndxNonLimitedUnits] += NewWeights / abs(NewWeights).sum() * DeltaP_kW
+        if SomeGenUnderloaded:
+            msg = "Some generators got underloaded (SomeGenUnderloaded: {}).".format(SomeGenUnderloaded)
+            logger.warn(msg)
+            # finds if available power can be reduced on generators, if not calc new powers
+            AvailablePower2Decrease = NewPower_kW - MinGen_kW
+            AvailablePower2Decrease[AvailablePower2Decrease < 0] = 0  # clean those below the minimum
+            # if no more possible set LessGenerationPossible = False
+            if AvailablePower2Decrease.sum() < 0:
+                msg = "No less generation can be decrease."
+                logger.warn(msg)
+                # MoreGenerationPossible = False
+                PossibleRedispath = False
+                break  # break while
+            # calculate power left
+            DeltaP_kW = MinGen_kW - NewPower_kW
+            DeltaP_kW[DeltaP_kW < 0] = 0
+            DeltaP_kW = DeltaP_kW.sum()
+            # get inidices of limited units
+            IndxLimitedUnits = MinGen_kW > NewPower_kW
+            IndxNonLimitedUnits = MinGen_kW <= NewPower_kW
+            # fix to limit values
+            NewPower_kW[IndxLimitedUnits] = MinGen_kW[IndxLimitedUnits]
+            # calculates weights for others generators to split the OverloadP_kW
+            NewWeights = RowValuesNorm[FUPTG_GenGridNonERNCIndx][IndxNonLimitedUnits]
+            # split power acorss other generators accordingly to FUPTG factors. Preserves the sign.
+            NewPower_kW[IndxNonLimitedUnits] += NewWeights / abs(NewWeights).sum() * DeltaP_kW
+        if (not SomeGenOverloaded) and (not SomeGenUnderloaded):
+            # Exit condition for redispatch complete
+            print("Exit condition for redispatch complete")
             break
-        count += 1  # helps keep track of Indices_GridGen
-    else:  # if not break for loop
-        if OverloadP_kW > 0:
-            msg = "Not enough power available on generators to stop 'inter-congestion'."
-            logger.error(msg)
-            raise CapacityOverloaded(msg)
+
+    if not PossibleRedispath:
+        msg = "Not enough power available on generators to stop 'inter-congestion'."
+        logger.error(msg)
+        raise CapacityOverloaded(msg)
+
+    # Finally assign the new power to Grid generators
+    Grid['gen'].loc[NonERNCIndx_GenFUPTG, 'p_kw'] = -NewPower_kW
 
 
 def make_Bbus_Bpr_A(Grid):
@@ -488,17 +534,19 @@ def sum_rows(A, rows = 'all'):
     return A * Aux
 
 
-def power_over_congestion(Grid, TypeElmnt, BranchIndTable, max_load_percent):
-    """ Calculates delta power over from max power expected under the max_load_percent.
-        Increases OverloadP_kW in 5% over max power branch limit.
-    Returns (OverloadP_kW, loading_percent)
+def power_over_congestion(Grid, TypeElmnt, BranchIndTable, max_load_percent, IncreaseFlow = 0.12):
+    """
+        Calculates delta power over from max power expected under the max_load_percent.
+        Increases OverloadP_kW in 12% over max power branch limit.
+
+        Returns (OverloadP_kW, loading_percent)
     """
     # FLUJO DE LINEA CAMBIA SIGNO. Absolute values requiered
     loading_percent = Grid['res_' + TypeElmnt].at[BranchIndTable, 'loading_percent']
     FluPAB_kW = abs(Grid['res_' + TypeElmnt].at[BranchIndTable, 'p_from_kw'])  # da igual dirección (signo)
     MaxFluP_kW = FluPAB_kW * max_load_percent / loading_percent  # >= 0
     OverloadP_kW = FluPAB_kW - MaxFluP_kW
-    OverloadP_kW += MaxFluP_kW * (0.05)  # increase 5% to compensate fpl error
+    OverloadP_kW += MaxFluP_kW * IncreaseFlow  # increases OverloadP_kW by 1+IncreaseFlow, compensate fpl error
     return OverloadP_kW, loading_percent
 
 
@@ -518,15 +566,94 @@ def name_of_elmnt_row(Grid, idxNan):
     return Name
 
 
+def gen_grid_indx_from_FUPTG(Grid_gen_tbl, IndGenRef_GBusMat, NumColumnsFUPTG):
+    """
+        Makes the assumtion to have all Grid_gen_tbl 0-indexed ordered. Note taht 'IndGenRef_GBusMat'
+        is zero-idexed as well as 'range(NumColumnsFUPTG)'.
+
+        Inputs:
+            **Grid_gen_tbl**: pandas table of grid
+            **IndGenRef_GBusMat**: (0-indexed)
+            **NumColumnsFUPTG**: FUPTG.shape[1]
+
+        Returns a list of the grid generator indices.
+    """
+    # verifies that Grid_gen_tbl index length is the same as NumColumnsFUPTG
+    if len(Grid_gen_tbl.index) != (NumColumnsFUPTG - 1):
+        msg = "Grid_gen_tbl is not the same as NumColumnsFUPTG"
+        logger.error(msg)
+        raise ValueError(msg)
+    lista = []
+    counter = 0
+    for i in range(NumColumnsFUPTG):
+        if i != IndGenRef_GBusMat:
+            lista.append(counter)
+        counter += 1
+    return lista
+
+
+def gen_grid_indx_Non_ERNC_from_FUPTG(Grid_gen_tbl, ListaERNC, IndGenRef_GBusMat, NumColumnsFUPTG):
+    """
+        Makes the assumtion to have all Grid_gen_tbl 0-indexed ordered.
+
+        Returns a list of the grid generator indices and the pandas index dataframe NonERNC_GridGen.
+    """
+    if Grid_gen_tbl.shape[0] != (NumColumnsFUPTG - 1):
+        msg = "Grid_gen_tbl num rows is not the same as NumColumnsFUPTG"
+        logger.error(msg)
+        raise ValueError(msg)
+    NonERNC_GridGen = Grid_gen_tbl[ ~Grid_gen_tbl['type'].isin(ListaERNC) ].index
+    ListReturned = []
+    Counter = 0
+    for i in range(NumColumnsFUPTG):
+        if i in NonERNC_GridGen:
+            ListReturned.append(i)
+            Counter += 1
+    return (ListReturned, NonERNC_GridGen)
+
+
 if __name__ == '__main__':
     # directly import conftest.py file (test only)
     import pandapower as pp
     from sys import path as sys__path
     sys__path.insert(0, "test/")
+    sys__path.insert(0, '..')
+    from smcfpl.aux_funcs import TipoCong
 
+    LoadPercent = 1.73  # 1.5
     # import test case
     from conftest import Sist5Bus
     Grid = Sist5Bus()
-    redispatch(Grid, 'line', 0, max_load_percent = 0.08)
-    # redispatch(Grid, 'line', 0, max_load_percent = 2.8)
     pp.rundcpp(Grid)
+    Inter, Intra = TipoCong(Grid, max_load=LoadPercent)
+    print("Inter:", Inter); print("Intra:", Intra)
+    print(Grid.res_line)
+    print(Grid.res_gen)
+    print(Grid.res_ext_grid)
+    print()
+
+    print("--- 1st Redispatch to line: 0")
+    redispatch(Grid, 'line', 0, max_load_percent=LoadPercent, decs=30)  # hard codede
+    pp.rundcpp(Grid)
+    Inter, Intra = TipoCong(Grid, max_load=LoadPercent)
+    print("Inter:", Inter); print("Intra:", Intra)
+    print(Grid.res_line)
+    print(Grid.res_gen)
+    print(Grid.res_ext_grid)
+    # print()
+
+    # print("--- 2st Redispatch to line: 4")
+    # redispatch(Grid, 'line', 4, max_load_percent=LoadPercent, decs=30)  # hard codede
+    # pp.rundcpp(Grid)
+    # Inter, Intra = TipoCong(Grid, max_load=LoadPercent)
+    # print("Inter:", Inter); print("Intra:", Intra)
+    # print(Grid.res_line)
+    # print()
+
+    # print("--- 3st Redispatch to line: 4")
+    # redispatch(Grid, 'line', 4, max_load_percent=LoadPercent, decs=30)  # hard codede
+    # pp.rundcpp(Grid)
+    # Inter, Intra = TipoCong(Grid, max_load=LoadPercent)
+    # print("Inter:", Inter); print("Intra:", Intra)
+    # print(Grid.res_line)
+    # print()

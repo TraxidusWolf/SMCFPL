@@ -6,7 +6,7 @@ from networkx import has_path as nx__has_path
 from networkx import connected_component_subgraphs as nx__connected_component_subgraphs
 from pandas import DataFrame as pd__DataFrame, date_range as pd__date_range, Series as pd__Series
 from pandas import datetime as pd__datetime, set_option as pd__set_option
-from pandas import concat as pd__concat, Timedelta as pd__Timedelta
+from pandas import concat as pd__concat
 from numpy import mean as np__mean, nan as np__NaN, arange as np__arange, bool_ as np__bool_
 from numpy import zeros as np__zeros
 from numpy.random import uniform as np_random__uniform, normal as np__random__normal
@@ -250,7 +250,7 @@ def TasaDemandaEsperada_a_Etapa(DF_ProyDem, BD_Etapas, FechaIniSim, FechaFinSim)
     return DF_Salida
 
 
-def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_HidHumeda, FechaIniSim, FechaFinSim, seed=False):
+def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_HidHumeda, FechaIniSim, FechaFinSim, seed=None):
     """
         Desde la tabla de entrada de 'in_smcfpl_histhid', calcula la probabilidad de excedencia (PE) anual de los años de la muestra que luego es adaptada (por promedio en caso de ambigüedad) a las etapas de la simulación.
         Notar como en las etapas renovables de cada etapa topológica, la PE es constante debido a la misma definición.
@@ -280,12 +280,12 @@ def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_
             **FechaIniSim**
             **FechaFinSim**
         Optional:
-            **seed** (int, False) - set random number seed to this value.
+            **seed** (int, None) - set random number seed to this value.
+
         :param seed: Sets the random number to be tha same always
         :type seed: int
     """
     logger.debug("! entrando en función: 'Crea_hidrologias_futuras' (aux_funcs.py) ...")
-    np__random__seed()  # make it more random
     # calcula años en horizonte de simulación
     NAniosSimulacion = du__relativedelta(FechaFinSim, FechaIniSim).years + 2  # cuenta el primero y el último
     ListaAniosSim = [FechaIniSim.year + i for i in range(NAniosSimulacion)]
@@ -337,9 +337,8 @@ def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_
             MaxE_Anio = ( 1 + min(DF_VarMens.values.max(), .5) ) * AnioCercano['TOTAL']  # limita la variación límite a no más de un 150% de la energía
             MinE_Anio = ( 1 + max(DF_VarMens.values.min(), -.5) ) * AnioCercano['TOTAL']  # limita la variación límite a no menos de un -150% de la energía
 
-            if seed:
-                # In case a seed is given (int) it's used to generate same numbers from seed
-                np__random__seed(seed)
+            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
+            np__random__seed(seed)
 
             # 6.- Modifica la energía afluente, UNIFORMEMENTE ALEATORIOS entre máx y mín (anteriores) dado por rango variación intermensual
             # 6.1.- En caso de hidrología media
@@ -629,7 +628,7 @@ def GenHistorica_a_Etapa(DF_Etapas, DF_histsolar, DF_histeolicas):
 
 
 def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_TasaCReg = pd__DataFrame(),
-                      DF_DesvDec = pd__DataFrame(), DictTypoCargasEta = {}, seed=False):
+                      DF_DesvDec = pd__DataFrame(), DictTypoCargasEta = {}, seed=None):
     """
         Genera un iterador de valor p.u. de las demandas en cada carga (Ésta
         debe ser multiplicada por el valor inicial nominal de la carga al
@@ -666,7 +665,7 @@ def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_Tas
         :type DictTypoCargasEta: Diccionario {EtaNum: pandas DataFrame}
 
         :param seed: Sets the random number to be tha same always
-        :type seed: int
+        :type seed: int, None
 
         Cada vez que se llama retorna una tupla con: (EtaNum, pandas DataFrame)
 
@@ -681,7 +680,6 @@ def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_Tas
                 2.4.- Agrega arreglo al DataFrame de Salida.
                 2.5.- Retorna la tupla (EtaNum 1-indexed, pandas DataFrame)
     """
-    np__random__seed()  # make it more random
     # Verifica que el largo de Etapas sean coincidentes, de lo contrario retorna ValueError
     if DF_TasaCLib.shape[0] != DF_TasaCReg.shape[0] != DF_DesvDec.shape[0] != len(DictTypoCargasEta):
         msg = "El numero de etapas en DF_TasaCLib, DF_TasaCReg y DF_DesvDec son diferentes del tamaño de DictTypoCargasEta."
@@ -696,9 +694,8 @@ def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_Tas
         # Obtiene los indices de las cargas en la etapa actual que sean Clientes Regulados
         IndCReg = DictTypoCargasEta[EtaNum][ DictTypoCargasEta[EtaNum]['type'] == 'R' ].index
 
-        if seed:
-            # In case a seed is given (int) it's used to generate same numbers from seed
-            np__random__seed(seed)
+        # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
+        np__random__seed(seed)
 
         #
         # Utiliza crecimiento esperado (DF_TasaCLib | DF_TasaCReg) como valor promedio para cada cliente,
@@ -715,11 +712,11 @@ def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_Tas
         # Asigna los datos Regulados y Libres al pandas DataFrame de salida
         DF_Salida.loc[IndCLib, 'PDem_pu'] = dataCLib  # demanda en [p.u.] ya que salen de valores DECIMALES en la etapa
         DF_Salida.loc[IndCReg, 'PDem_pu'] = dataCReg  # demanda en [p.u.] ya que salen de valores DECIMALES en la etapa
-        yield ( EtaNum,  DF_Salida)
+        yield (EtaNum,  DF_Salida)
 
 
 def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC = None,
-                       DF_TSF = None, DF_PE_Hid = None, DesvEstDespCenEyS=1, DesvEstDespCenP=1, seed=False):
+                       DF_TSF = None, DF_PE_Hid = None, DesvEstDespCenEyS=1, DesvEstDespCenP=1, seed=None):
     """
         Genera un iterador de valores p.u. de las potencias de despacho en cada unidad de generación de las distintas tecnologías. Estos valores
         deben ser multiplicados por el valor nominal de potencia de generación de la unidad y limitados entre pmin y pmax). El iterador crea un
@@ -749,9 +746,8 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
                 2.9.- Retorna la tupla (EtaNum 1-indexed, pandas DataFrame)
 
         :param seed: Sets the random number to be tha same always
-        :type seed: int
+        :type seed: int, None
     """
-    np__random__seed()  # make it more random
     # Corrobora que el largo de los parámetros de entrada (teóricamente el Número de etapas), sea igual. De lo contrario retorna ValueError
     if len(Dict_TiposGen) != DF_HistGenERNC[0].shape[0] != DF_HistGenERNC[1].shape[0] != DF_TSF.shape[0] != DF_PE_Hid.shape[0]:
         msg = "El numero de etapa en los parámetros de entrada no coinciden."
@@ -790,9 +786,8 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
         #
         # Por cada nombre ERNC se obtiene e valor aleatorio, según sus medias y desviaciones estándar
         for NomERNC in NombresERNCTipo:
-            if seed:
-                # In case a seed is given (int) it's used to generate same numbers from seed
-                np__random__seed(seed)
+            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
+            np__random__seed(seed)
 
             if 'Solar' in NomERNC:
                 Power_pu = np__random__normal( loc=float(DF_HistGenERNC[0].loc[EtaNum, NomERNC + '_mean']),
@@ -818,9 +813,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
             DF_IndGen_PDispatched.loc[DF_IndGen_PDispatched['type'] == NomERNC, 'PGen_pu'] = Power_pu
         # Para las tecnologías hidráulicas asigna promedio según PE y desv según parámetros 'DesvEstDespCenEyS' y 'DesvEstDespCenP'
         if len(IndGenEmb):  # EMBALSE
-            if seed:
-                # In case a seed is given (int) it's used to generate same numbers from seed
-                np__random__seed(seed)
+            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
+            np__random__seed(seed)
+
             # valor de pdf gaussiana/normal
             Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
                                            scale=DesvEstDespCenEyS,
@@ -837,9 +832,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
             DF_IndGen_PDispatched.loc[ IndGenEmb, 'PGen_pu'] = Power_pu
 
         if len(IndGenSerie):  # SERIE
-            if seed:
-                # In case a seed is given (int) it's used to generate same numbers from seed
-                np__random__seed(seed)
+            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
+            np__random__seed(seed)
+
             # valor de pdf gaussiana/normal
             Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
                                            scale=DesvEstDespCenEyS,
@@ -856,9 +851,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
             DF_IndGen_PDispatched.loc[ IndGenSerie, 'PGen_pu'] = Power_pu
 
         if len(IndGenPasada):    # PASADA
-            if seed:
-                # In case a seed is given (int) it's used to generate same numbers from seed
-                np__random__seed(seed)
+            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
+            np__random__seed(seed)
+
             # valor de pdf gaussiana/normal
             Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
                                            scale=DesvEstDespCenP,
@@ -875,9 +870,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
             DF_IndGen_PDispatched.loc[ IndGenPasada, 'PGen_pu'] = Power_pu
 
         if len(IndGenTermoCarbon):    # CARBON
-            if seed:
-                # In case a seed is given (int) it's used to generate same numbers from seed
-                np__random__seed(seed)
+            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
+            np__random__seed(seed)
+
             # valor de pdf uniforme
             Power_pu = np_random__uniform( low=0.0,
                                            high=1.0,
@@ -894,9 +889,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
             DF_IndGen_PDispatched.loc[ IndGenTermoCarbon, 'PGen_pu'] = Power_pu
 
         if len(IndGenTermoGasDie):    # GAS-DIÉSEL
-            if seed:
-                # In case a seed is given (int) it's used to generate same numbers from seed
-                np__random__seed(seed)
+            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
+            np__random__seed(seed)
+
             # valor de pdf uniforme
             Power_pu = np_random__uniform( low=0.0,
                                            high=1.0,
@@ -913,9 +908,9 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
             DF_IndGen_PDispatched.loc[ IndGenTermoGasDie, 'PGen_pu'] = Power_pu
 
         if len(IndGenTermoOtras):    # OTRAS
-            if seed:
-                # In case a seed is given (int) it's used to generate same numbers from seed
-                np__random__seed(seed)
+            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
+            np__random__seed(seed)
+
             # valor de pdf uniforme
             Power_pu = np_random__uniform( low=0.0,
                                            high=1.0,
@@ -964,7 +959,10 @@ def TipoCong(Grid, max_load=100):
         Se hace de valer que los indices de las matrices de la red PandaPower
         son los mismo que los indices de los nodos en los grafos y subgrafos creados, siempre
         y cuando no exista un elemento perdido que las conecte, de lo contrario, se crea el nodo.
-        Retorna una tupla con dos listas de grupos de elementos congestionados.
+
+        Requiere que Grid posea valores del flujo de potencia ejecutado.
+
+        Retorna una tupla con dos listas de grupos de elementos congestionados GCong serie.
         Ejemplo return:
             ( ListaCongInter, ListaCongIntra )
             donde:

@@ -16,10 +16,10 @@ logging.basicConfig(level=logging.DEBUG,
 logger = logging.getLogger()
 
 
-def Send( NNodos=1, WTime=dt__timedelta(days=0, hours=0, minutes=5, seconds=0), NTasks=1,
-          ntasks_per_node=1, CPUxTask=1, SMCFPL_dir=os__getcwd(), TempData_dir=os__getcwd(),
-          DirsUsar=[], NumTrbjsHastaAhora=1, NTotalCasos=1, StageIndexesList=[],
-          NumParallelCPU=False, MaxItCongInter=1, MaxItCongIntra=1 ):
+def send_work( NNodos=1, WTime=dt__timedelta(days=0, hours=0, minutes=5, seconds=0), NTasks=1,
+               ntasks_per_node=1, CPUxTask=1, SMCFPL_dir=os__getcwd(), TempData_dir=os__getcwd(),
+               DirsUsar=[], NumTrbjsHastaAhora=1, NTotalCasos=1, StageIndexesList=[],
+               NumParallelCPU=False, MaxItCongInter=1, MaxItCongIntra=1 ):
     """
         Por cada llamada a esta función se ejecuta la linea de comando que llama al archivo
         'NucleoCalculo.py' de la biblioteca SMCFPL de python 3.6. a ejecutarse en los Nodos.
@@ -96,20 +96,18 @@ def Send( NNodos=1, WTime=dt__timedelta(days=0, hours=0, minutes=5, seconds=0), 
         sbatch_cmd += ["--wrap"]
         # Crea string de comando a ejecutar con sbatch en los nodos según caso de 'FolderName'
         CMD_execute = "module load python/3.6.1; python -c "
-        CMD_execute += "'from smcfpl.NucleoCalculo import Calcular;"
+        CMD_execute += "'from smcfpl.NucleoCalculo import calc;"
         CMD_execute += "from pandas import read_csv;"  # requerido para leer archivos generales
-        CMD_execute += "from json import load;"  # requerido para leer archivos JSON (ExtraData)
-        CMD_execute += "from pandapower import from_pickle;"  # requerido para leer grillas PandaPower
-        CMD_execute += "Calcular({Args})'".format(Args=Arguments)
+        CMD_execute += "calc({Args})'".format(Args=Arguments)
         #
         #
         # debugg. Sobrescribe anteriores
         sbatch_cmd = ["python3", "-c"]
-        CMD_execute = "from smcfpl.NucleoCalculo import Calcular;"
+        CMD_execute = "from smcfpl.NucleoCalculo import calc;"
         CMD_execute += "from pandas import read_csv;"  # requerido para leer archivos generales
         CMD_execute += "from json import load;"  # requerido para leer archivos JSON (ExtraData)
         CMD_execute += "from pandapower import from_pickle;"  # requerido para leer grillas PandaPower
-        CMD_execute += "Calcular({Args})".format(Args=Arguments)
+        CMD_execute += "calc({Args})".format(Args=Arguments)
         #
         #
 
@@ -268,5 +266,5 @@ def EjecutaComando(comando, CasoNum, TotalCasos, WTime, SMCFPL_dir, TempData_dir
 
     # read files outputed
 
-    logger.debug("Caso {}/{} completado!".format(CasoNum, TotalCasos))
+    logger.debug("Caso {}/{} completados!".format(CasoNum, TotalCasos))
     return StdOut

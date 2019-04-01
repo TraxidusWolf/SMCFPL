@@ -14,11 +14,9 @@ from pandapower.topology import connected_components as pp__topology__connected_
 from pandapower.topology import create_nxgraph as pp__topology__create_nxgraph
 from pandapower.idx_brch import BR_R, BR_X, PF
 from pandapower.idx_bus import VA
-from pandapower.auxiliary import ppException
-from pandapower.powerflow import LoadflowNotConverged
 from pandas import DataFrame as pd__DataFrame
 from pandas import concat as pd__concat
-from numpy import cos as np__cos, real as np__real, sign as np__sign
+from numpy import cos as np__cos, real as np__real
 # from smcfpl.aux_funcs import overloaded_trafo2w as aux_smcfpl__overloaded_trafo2w
 # from smcfpl.aux_funcs import overloaded_trafo3w as aux_smcfpl__overloaded_trafo3w
 from smcfpl.in_out_proc import write_output_case as smcfpl__in_out_proc__write_output_case
@@ -27,36 +25,16 @@ from smcfpl.redispatch import redispatch as redispatch__redispatch, make_Bbus_Bp
 from smcfpl.redispatch import power_over_congestion as redispatch__power_over_congestion
 from smcfpl.smcfpl_exceptions import *
 
+
 import logging
-
-
-def setup_logger(logger_name, log_file='.', level=logging.DEBUG):
-    """ If log_file is declared (different than '.') log file is used.
-    """
-    logg = logging.getLogger(logger_name)
-    formatter = logging.Formatter('[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s')
-    if log_file != '.':
-        fileHandler = logging.FileHandler(log_file, mode='w')
-        fileHandler.setFormatter(formatter)
-        logg.addHandler(fileHandler)
-    streamHandler = logging.StreamHandler()
-    streamHandler.setFormatter(formatter)
-
-    logg.setLevel(level)
-    logg.addHandler(streamHandler)
-
-
-# create logger
-setup_logger('stdout_only')
-setup_logger('Intra_congestion', r'IntraCongs.log')
-# get loggers created
-logger = logging.getLogger('stdout_only')
-logger_IntraCong = logging.getLogger('Intra_congestion')
+logging.basicConfig(level=logging.DEBUG,
+                    format="[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s")
+logger = logging.getLogger()
 
 
 def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
          DF_seriesconf, DF_CVarReservoir_hid, MaxNumVecesSubRedes, MaxItCongIntra, abs_OutFilePath='',
-         DemGenerator=iter(()), DispatchGenerator=iter(()), CaseID=('hid', 0, 0),
+         DemGenerator_Dict=dict(), DispatchGenerator_Dict=dict(), CaseID=('hid', 0, 0),
          in_node=False):
     """
         Función base de cálculo para la resolución del modelo SMCFPL. Por cada etapa obtiene los valores
@@ -90,18 +68,18 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         :param in_node: Verdadero indica que es ejecutado en nodo. Valores son retornados en archivo.
         :type in_node: bool
 
-        :param DemGenerator: Iterador con valores tipo: (EtaNum, pd.DataFrame.loc[EtaNum, 'PDem_pu'])
-        :type DemGenerator: iterator
+        :param DemGenerator_Dict: Diccionario constituido por { EtaNum, pd.DataFrame.loc[EtaNum, 'PDem_pu'] }
+        :type DemGenerator_Dict: Diccionario
 
-        :param DispatchGenerator: Iterador con valores tipo: (EtaNum, pd.DataFrame.loc[EtaNum, ['type', PGen_pu']])
-        :type DispatchGenerator: iterator
+        :param DispatchGenerator_Dict: Diccionario constituido por { EtaNum, pd.DataFrame.loc[EtaNum, ['type', PGen_pu']] }
+        :type DispatchGenerator_Dict: Diccionario
 
     """
     SuccededStages = 0
     RelevantData = {}
     print("Hidrology:", Hidrology)
     # for each stage in the case
-    for (StageNum, DF_Dem), (StageNum, DF_Gen) in zip(DemGenerator, DispatchGenerator):
+    for StageNum in StageIndexesList:
         print("StageNum:", StageNum, "CaseNum:", CaseNum)
         if in_node:
             # Load Data from every stage when 'in_node' is True
@@ -117,15 +95,15 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
 
             # # load ExtraData writen for the Power System
             # FileName = "{}.json".format(StageNum)
-            # # Dict_ExtraData = json__load(FileName)
+            # # DictExtraData = json__load(FileName)
             # print("FileName:", FileName)
             # # lee archivo correspondiente
             # # with open(+FileName, 'r') as f:
         else:
             # Carga la grilla y extradata con valores actualizados
             Grid, Dict_ExtraData = UpdateGridPowers( Grillas, StageNum,
-                                                     DF_Dem,
-                                                     DF_Gen)
+                                                     DemGenerator_Dict,
+                                                     DispatchGenerator_Dict)
 
         #
         # Verifica que el balance de potencia es posible en la etapa del caso (Gen-Dem)
@@ -199,29 +177,13 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         """
         # Revisa la congestiones intra hasta que se llega a algún límite
         if ListaCongIntra:  # Is there any IntraCongestion?
-            try:
-                do_intra_congestion( Grid, Dict_ExtraData, ListaCongIntra,
-                                     MaxItCongIntra, in_node,
-                                     StageNum, StageIndexesList,
-                                     CaseNum)
-            except IntraCongestionIterationExceeded as e:
+            Status_IntraCong = do_intra_congestion( Grid, ListaCongIntra, MaxItCongIntra,
+                                                    in_node, StageNum, StageIndexesList,
+                                                    CaseNum)
+            if Status_IntraCong:  # == -1
+                print("Status_IntraCong:\n", Status_IntraCong)
                 print("**************************************")
-                print(" You got an Exception: {}! Moving to next stage.".format(e))
-                print("**************************************")
-                continue  # nothing valueble to return, jump to next stage
-            except CapacityOverloaded as e:
-                print("**************************************")
-                print(" You got an Exception: {}! Moving to next stage.".format(e))
-                print("**************************************")
-                continue  # nothing valueble to return, jump to next stage
-            except (GeneratorReferenceOverloaded, GeneratorReferenceUnderloaded) as e:
-                print("**************************************")
-                print(" You got an Exception: {}! Moving to next stage.".format(e))
-                print("**************************************")
-                continue  # nothing valueble to return, jump to next stage
-            # except Exception as e:
-            #     print("Exception was:", e)
-            #     continue
+                continue  # nothing valueble to return, go to next stage
 
         """
               ###           #                    ###                                       #       #
@@ -291,18 +253,17 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
 """
 
 
-def UpdateGridPowers(Grillas, StageNum, DF_Dem, DF_Gen):
-    """
-        :type StageNum: int
-        :type DF_Dem: pandas DataFrame
-        :type DF_Gen: pandas DataFrame
-    """
+def UpdateGridPowers(Grillas, StageNum, DemGenerator_Dict, DispatchGenerator_Dict):
     Grid = Grillas[StageNum]['PandaPowerNet']
     Dict_ExtraData = Grillas[StageNum]['ExtraData']
+    D = DemGenerator_Dict[StageNum]  # pandas DataFrame
+    # print("D:", D)
+    G = DispatchGenerator_Dict[StageNum]  # pandas DataFrame
+    # print("G:", G)
     # D['PDem_pu'].values: puede ser negativo, positivo o cero, pero siempre en [p.u.]
-    Grid['load']['p_kw'] = Grid['load']['p_kw'] * DF_Dem['PDem_pu'].values
+    Grid['load']['p_kw'] = Grid['load']['p_kw'] * D['PDem_pu'].values
     # G['PGen_pu'].values: siempre va a estar entre 0 y 1 inclusive
-    Grid['gen']['p_kw'] = Grid['gen']['max_p_kw'] * DF_Gen['PGen_pu'].values
+    Grid['gen']['p_kw'] = Grid['gen']['max_p_kw'] * G['PGen_pu'].values
     return Grid, Dict_ExtraData
 
 
@@ -415,7 +376,7 @@ def find_marginal_unit(Grid, Dict_ExtraData):
     return MarginUnit
 
 
-def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, in_node, StageNum, StageIndexesList, CaseNum):
+def do_intra_congestion(Grid, ListaCongIntra, MaxItCongIntra, in_node, StageNum, StageIndexesList, CaseNum):
     """
         Do the algorithm of intercongestion.
         Returns values if something goes wrong. Otherwise it's None.
@@ -430,98 +391,63 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, in
             break
 
         for TypeElmnt, ListIndTable in GCongDict.items():
-            # Trafos3w are not being consider
-            if TypeElmnt == 'line':
-                ColNames4Type = ['Pmax_AB_MW', 'Pmax_BA_MW']
-                res_FlowFromNameCol = 'p_from_kw'
-            elif TypeElmnt == 'trafo':
-                ColNames4Type = ['Pmax_AB_MW', 'Pmax_BA_MW']
-                res_FlowFromNameCol = 'p_hv_kw'
+            print("TypeElmnt:", TypeElmnt)
+            print("ListIndTable:", ListIndTable)
+            if ListIndTable:
+                IndTable = ListIndTable[0]  # any of the list is needed
+                print("IndTable:", IndTable)
+                print("******")
+                print("IntraCounter:", IntraCounter)
+                print("******")
+                # keeps track of number of times done
+                IntraCounter += 1
+
+                try:
+                    msg = "Congestion redispatch started..."
+                    logger.debug(msg)
+                    redispatch__redispatch(Grid, TypeElmnt, IndTable, max_load_percent=100, decs=30)
+                except FalseCongestion:
+                    # Redispatch has no meaning. Congestion wan't real.
+                    continue
+                except CapacityOverloaded:
+                    # Generators limits can't handle congestion. No much meaning to keep going.
+                    break
+
+                if IntraCounter >= MaxItCongIntra:
+                    # limit of IntraCongestion is reached
+                    msg = "Límite de MaxItCongIntra alcanzado en etapa {}/{} del caso {}!.".format(
+                        StageNum, len(StageIndexesList), CaseNum)
+                    logger.warn(msg)
+                    break
             else:
-                msg = "Type element on IntraCongestion element is no 'line' nor 'trafo'."
-                logger.error(msg)
-                raise ValueError(msg)
+                # no elements within TypeElmnt
+                continue
 
-            FirstTime = True  # to get first value
-            # iterates over all elements in same congestion element series to get minimum capacity
-            for IndTable in ListIndTable:
-                FlowDir = np__sign(Grid['res_' + TypeElmnt].at[IndTable, res_FlowFromNameCol])  # line flow sign from A to B is 1
-                if FlowDir == 1:  # choose column (name) according to flow direction of overload element within Grid
-                    ColName4Type_flow = ColNames4Type[0]
-                else:
-                    ColName4Type_flow = ColNames4Type[1]
-                if FirstTime:  # works as initialization if ListIndTable is not empty
-                    PrevCap = Dict_ExtraData['PmaxMW_' + TypeElmnt].reset_index().at[IndTable, ColName4Type_flow]
-                    FirstTime = False
-                    MinCapElmtType = (TypeElmnt, IndTable)
-                # Get the TypeElmnt and Index of lowest Tx capacity
-                ActualCap = Dict_ExtraData['PmaxMW_' + TypeElmnt].reset_index().at[IndTable, ColName4Type_flow]
-                if ActualCap < PrevCap:  # overwrites every time it finds a smaller
-                    MinCapElmtType = (TypeElmnt, IndTable)
-                else:  # updates previous capacity
-                    PrevCap = ActualCap
-
-        TypeElmnt, IndTable = MinCapElmtType
-        # keeps track of number of times done. Must stay before redispath because of continue
-        IntraCounter += 1
-        print("TypeElmnt:", TypeElmnt)
-        print("IndTable:", IndTable)
-        print("******")
-        print("IntraCounter:", IntraCounter)
-        print("******")
-        loading_percent = Grid['res_' + TypeElmnt].at[IndTable, 'loading_percent']
-        msg = ','.join( [str(StageNum), str(CaseNum), TypeElmnt, str(IndTable), str(loading_percent)])
-        logger_IntraCong.info(msg)
-
-        if IntraCounter >= MaxItCongIntra:
-            # limit of IntraCongestion is reached
-            msg = "Límite de MaxItCongIntra alcanzado en etapa {}/{} del caso {}!.".format(
-                StageNum, len(StageIndexesList), CaseNum)
-            logger.warn(msg)
-            # Enough time!! Go home.
-            raise IntraCongestionIterationExceeded(msg)
-
-        try:
-            msg = "Congestion redispatch started..."
+        else:  # if for not break then:
+            # print("Enter No break for loop")
+            # calculates load flow
+            pp__rundcpp(Grid)
+            # checks for reference generator limits
+            RE_MaxGen_kW = abs(Grid.ext_grid.at[0, 'max_p_kw'])
+            RE_MinGen_kW = abs(Grid.ext_grid.at[0, 'min_p_kw'])
+            RE_Gen_kW = abs(Grid.res_ext_grid.at[0, 'p_kw'])
+            if (RE_Gen_kW > RE_MaxGen_kW) | (RE_Gen_kW < RE_MinGen_kW):
+                print("...Limites máximos de generador de referencia superados. {}>={}>={}".format(RE_MaxGen_kW, RE_Gen_kW, RE_MinGen_kW))
+                # finish function when outside limits
+                return -1
+            msg = "Re-check congestion existance..."
             logger.debug(msg)
-            redispatch__redispatch(Grid, TypeElmnt, IndTable, max_load_percent=100, decs=30)
-        except FalseCongestion:
-            # Redispatch has no meaning. Congestion wan't real. Jump to next one
+            # checks for congestión again
+            ListaCongInter, ListaCongIntra = aux_funcs__TipoCong(Grid, max_load=100)
+            print("ListaCongIntra:", ListaCongIntra)
+            print("ListaCongInter:", ListaCongInter)
+            ListaCongIntra = iter(ListaCongIntra)
+            # print("Exit No break for loop")
             continue
-        except CapacityOverloaded as e:
-            # Generators limits can't handle congestion. No much meaning to keep going.
-            raise e
-        except (LoadflowNotConverged, ppException):
-            # If power flow did not converged, then skip to next stage
-            # (This should now happend unless base Grid is someway wrong).
-            continue
-
-        # Checks for results of redipatchr problems and values
-
-        # calculates load flow
-        pp__rundcpp(Grid)
-        # checks for reference generator limits
-        RE_MaxGen_kW = abs(Grid.ext_grid.at[0, 'max_p_kw'])
-        RE_MinGen_kW = abs(Grid.ext_grid.at[0, 'min_p_kw'])
-        RE_Gen_kW = abs(Grid.res_ext_grid.at[0, 'p_kw'])
-        if RE_Gen_kW > RE_MaxGen_kW:
-            msg = "...Limite máximo generador de referencia superados. {}>={}".format(RE_MaxGen_kW, RE_Gen_kW)
-            # finish function when outside limits
-            print(msg)
-            raise GeneratorReferenceOverloaded(msg)
-        if RE_Gen_kW < RE_MinGen_kW:
-            msg = "...Limite mínimo generador de referencia superados. {}>={}".format(RE_Gen_kW, RE_MinGen_kW)
-            # finish function when outside limits
-            print(msg)
-            raise GeneratorReferenceUnderloaded(msg)
-        msg = "Re-checking congestion existance..."
-        logger.debug(msg)
-        # checks for congestión again
-        ListaCongInter, ListaCongIntra = aux_funcs__TipoCong(Grid, max_load=100)
-        print("ListaCongIntra:", ListaCongIntra)
-        print("ListaCongInter:", ListaCongInter)
-        print("--- fin iteración while ---")
-        ListaCongIntra = iter(ListaCongIntra)
+        break
+        print("Got out (break) of current stage because of MaxItCongIntra")
+        # Enough time!! Go home.
+        return -1
     return None
 
 

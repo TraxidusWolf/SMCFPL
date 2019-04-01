@@ -110,9 +110,9 @@ def Sist5Bus():
     pp.create_load(net, bus=3, p_kw=40e3)
     pp.create_load(net, bus=4, p_kw=60e3)
     # gen
-    pp.create_gen(net, bus=0, p_kw=-80e3, max_p_kw = -100e3, min_p_kw = 0)
-    pp.create_ext_grid(net, bus=1, max_q_kvar=1e3, max_p_kw = -100e3, min_p_kw = 0)
-    pp.create_gen(net, bus=4, p_kw=-34.6e3, max_p_kw = -100e3, min_p_kw = 0)
+    pp.create_gen(net, name='G 01', bus=0, p_kw=-80e3, max_p_kw = -100e3, min_p_kw = -80e3, type='Termo')
+    pp.create_ext_grid(net, name='G 02', bus=1, max_q_kvar=1e3, max_p_kw = -100e3, min_p_kw = 0, type='Hydro')
+    pp.create_gen(net, name='G 03', bus=4, p_kw=-34.6e3, max_p_kw = -100e3, min_p_kw = 0, type='Solar')
     return net
 
 
