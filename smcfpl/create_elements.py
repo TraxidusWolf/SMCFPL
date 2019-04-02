@@ -18,11 +18,13 @@ from pandas import DataFrame as pd__DataFrame
 from pandas import concat as pd__concat
 from numpy import tile as np__tile, float128 as np__float128
 from numpy import exp as np__exp
+from numpy import ceil as np__ceil
 from datetime import datetime as dt
 from datetime import timedelta as dt__timedelta
 from dateutil import relativedelta as du__relativedelta
 from shutil import rmtree as shutil__rmtree
-from pickle import load as pickle__load
+from pickle import load as pickle__load, dump as pickle__dump
+from copy import deepcopy as copy__deepcopy
 from pandapower import create_empty_network as pp__create_empty_network, create_buses as pp__create_buses
 from pandapower import create_line as pp__create_line, create_std_types as pp__create_std_types
 from pandapower import create_transformer as pp__create_transformer, create_transformer3w as pp__create_transformer3w
@@ -30,20 +32,17 @@ from pandapower import create_load as pp__create_load, create_gen as pp__create_
 from pandapower import create_ext_grid as pp__create_ext_grid
 from pandapower.topology import unsupplied_buses as pp__topology__unsupplied_buses
 from pandapower import drop_inactive_elements as pp__drop_inactive_elements
-from pandapower import to_pickle as pp__to_pickle, from_pickle as pp__from_pickle
 from multiprocessing import cpu_count as mu__cpu_count, Pool as mu__Pool
 
 import logging
-Logging_level = logging.DEBUG
-logging.basicConfig(level=Logging_level,
-                    format="[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s")
-logger = logging.getLogger()
+# define global loggers
+aux_funcs.setup_logger('stdout_only', level=logging.DEBUG)
+aux_funcs.setup_logger('Intra_congestion', r'IntraCongs.log')
 
-# Cambia logger level de pandapower a WARNING
-# logging.getLogger("pandapower").setLevel(logging.WARNING)
+# create local logger variable
+logger = logging.getLogger('stdout_only')
 # Cambia logger level de pandapower al actual
 logging.getLogger("pandapower").setLevel(logger.level)
-# logging.getLogger("pandapower").setLevel(Logging_level)
 
 
 class Simulation(object):
@@ -71,7 +70,7 @@ class Simulation(object):
             :type UsaSlurm: dict
 
         """
-        logger.debug("! Initializating class Simulation(...)  (create_elements.py)...")
+        logger.debug("! Initializating class Simulation(...)")
         STime = dt.now()
         #
         # Atributos desde entradas
@@ -145,12 +144,6 @@ class Simulation(object):
         print('self.BD_Etapas:\n', self.BD_Etapas)
         #
 
-        #
-        # checks for temporal directory. Mainly debugging process
-        if self.UseTempFolder and not self.BD_file_exists:
-            msg = "Writing databases to file as requested (UseTempFolder=True) "
-            self.write_DataBases_to_pickle(self.abs_path_temp)
-
         """
              ####           #            #####    #     ##     #                     #
               #  #          #            #               #     #
@@ -166,7 +159,7 @@ class Simulation(object):
         # Numero total de etapas
         self.NEta = self.BD_Etapas.shape[0]
 
-        # Gets a set of all generator's name (including ext_grid) available across stages
+        # Gets a set of all generator's name (including ext_grid) available across stages (to set curve cost)
         self.AllGenNames = set()
         for NStg, val in self.BD_RedesXEtapa.items():
             for n in val['PandaPowerNet'].gen.name.values:
@@ -192,8 +185,81 @@ class Simulation(object):
         # self.ListNumGenNoSlack = [d['ExtraData']['NumGenNoSlack'] for d in self.BD_RedesXEtapa.values()]
         # Crea lista del tipos (Número de Unidades intrínseco) de Generación en cada Etapa/Grid
         self.DictTiposGenNoSlack = { k: d['ExtraData']['Tipos'] for k, d in self.BD_RedesXEtapa.items() }
-        # # Obtiene Grillas de cada etapa en diccionario (1-indexed)
-        # self.DictSEPBrutoXEtapa = {k: v['PandaPowerNet'] for k, v in self.BD_RedesXEtapa.items()}
+
+        #
+        # Creates the Demand base generator for cases
+        self.Base_PyGeneratorDemand = aux_funcs.GeneradorDemanda(StageIndexesList=self.BD_Etapas.index.tolist(),
+                                                                 DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
+                                                                 DF_TasaCReg=self.BD_DemProy[['TasaCliReg']],  # pandas DataFrame
+                                                                 DF_DesvDec=self.BD_DemProy[['Desv_decimal']],  # pandas DataFrame
+                                                                 DictTypoCargasEta=self.DictTypoCargasEta,  # diccionario
+                                                                 seed=self.UseRandomSeed)  # int, None
+        #
+        # Creates a hidrology databases and saves it in:
+        #    BD_Hydro = {HidNom: { 'DF_PEsXEtapa': DF_PEsXEtapa,
+        #                          'DF_ParamHidEmb_hid': DF_ParamHidEmb_hid,
+        #                          'DF_CotasEmbalsesXEtapa': DF_CotasEmbalsesXEtapa,
+        #                          'DF_CVarReservoir_hid': DF_CVarReservoir_hid,
+        #                          'DF_CostoCentrales': DF_CostoCentrales,
+        #                          'PyGeneratorDispatched': PyGeneratorDispatched},
+        #                ...}
+        self.BD_Hydro = dict()
+        self.BD_BaseGenDisp = dict()
+        for HidNom in self.ListaHidrologias:
+            self.BD_Hydro[HidNom] = dict()
+            # ---- Ajusta base de datos según Hidrología ----
+            # PEs por etapa asociadas a la Hidrología en cuestión (DF_PEsXEtapa)
+            DF_PEsXEtapa = self.BD_Hidrologias_futuras[['PE ' + HidNom + ' dec']]
+            # Parámetros de cota-costo en hidrología actual. Indices: ['b', 'CVmin', 'CVmax', 'CotaMin', 'CotaMax']
+            DF_ParamHidEmb_hid = self.BD_ParamHidEmb_filtered.loc[HidNom]  # Accede al DF del DF Multindex
+            # Initialize reservoir's levels with PE's (excedence probability) as decimal across stages
+            DF_CotasEmbalsesXEtapa = pd__DataFrame(np__tile(DF_PEsXEtapa, (1, len(DF_ParamHidEmb_hid.columns))),
+                                                   columns = DF_ParamHidEmb_hid.columns,
+                                                   index = DF_PEsXEtapa.index)
+            # Obtiene las cotas Máximas y Mínimas de los embalses dada la hidrología actual
+            CotasMax = DF_ParamHidEmb_hid.loc['CotaMax'].values
+            CotasMin = DF_ParamHidEmb_hid.loc['CotaMin'].values
+            # Calcula el valor lineal dado por la PE en cada etapa, desde CotaMin hasta CotaMax. De cada Embalse
+            DF_CotasEmbalsesXEtapa = (CotasMax - CotasMin) * (1 - DF_CotasEmbalsesXEtapa) + CotasMin
+            DF_CVarReservoir_hid = calc_reservoir_costs_from_cota( DF_CotasEmbalsesXEtapa,
+                                                                   DF_ParamHidEmb_hid,
+                                                                   CostCurves = self.CostCurves)
+            #
+            # Find generation costs at given hidrology
+            DF_CostoCentrales = pd__DataFrame(index=DF_CVarReservoir_hid.index)
+            for indx, (Reservoir, GenNom, FuncCost) in self.BD_seriesconf_filtered.iterrows():
+                DF_CostoCentrales = DF_CostoCentrales.assign(**{GenNom: DF_CVarReservoir_hid[Reservoir]})
+
+            # Crea los generadores de despacho por cada hidrología
+            self.BD_BaseGenDisp[HidNom] = aux_funcs.GeneradorDespacho(StageIndexesList=self.BD_Etapas.index.tolist(),
+                                                                      Dict_TiposGen=self.DictTiposGenNoSlack,  # lista
+                                                                      DF_HistGenERNC=self.BD_HistGenRenovable,  # tupla de dos pandas DataFrame
+                                                                      DF_TSF=self.BD_TSFProy,  # para cada tecnología que recurra con falla se asigna
+                                                                      DF_PE_Hid=DF_PEsXEtapa,  # pandas DataFrame
+                                                                      DesvEstDespCenEyS=self.DesvEstDespCenEyS,  # float
+                                                                      DesvEstDespCenP=self.DesvEstDespCenP,  # float
+                                                                      seed=self.UseRandomSeed)  # int, None
+            # Updates the dictionary
+            self.BD_Hydro[HidNom]['DF_PEsXEtapa'] = DF_PEsXEtapa
+            self.BD_Hydro[HidNom]['DF_ParamHidEmb_hid'] = DF_ParamHidEmb_hid
+            self.BD_Hydro[HidNom]['DF_CotasEmbalsesXEtapa'] = DF_CotasEmbalsesXEtapa
+            self.BD_Hydro[HidNom]['DF_CVarReservoir_hid'] = DF_CVarReservoir_hid
+            self.BD_Hydro[HidNom]['DF_CostoCentrales'] = DF_CostoCentrales
+            # ---- self.BD_BaseGenDisp[HidNom] is not saved because generators can't be pickled
+
+        #
+        # checks for temporal directory. Mainly debugging process
+        if self.UseTempFolder and not self.BD_file_exists:
+            msg = "Writing databases to file as requested (UseTempFolder=True)"
+            self.write_DataBases_to_pickle(self.abs_path_temp)
+        # dont forget about BD_Hydro
+        if self.UseTempFolder and not os__path__isfile(self.abs_path_temp + os__sep + 'BD_Hydro.p'):
+            # checks for hydro database
+            # with open('BD_Hydro', 'wb') as f:
+            #     pickle__dump(self.BD_Hydro, f)
+            smcfpl__in_out_proc__dump_BDs_to_pickle( {'BD_Hydro': self.BD_Hydro},
+                                                     pathto=self.abs_path_temp,
+                                                     FileFormat='pickle')
 
         # checks for existance of OutFilePath directory
         if not os__path__isdir(self.abs_OutFilePath):
@@ -238,31 +304,61 @@ class Simulation(object):
                 # Envía en paralelo múltiples grupos de casos (todas etapas bajo mismas condiciones de operación)
                 según nodos se hubieran solicitado. Las potencias de grillas son alteradas con la probabilidad
                 correspondiente justo antes de ser escritas.
+
+                # Everything should be fine if NumNodes approx NumCPU head node.
             """
+            #
             ### DEL TOTAL DE CASOS DIVIDIR SEGÚN CANTIDAD DE NODOS SOLICITADOS (24 nucleos y 25 nodos)
-            # Calcula casos por nodo. Divide casos entre total de nodos pedidos (NCasos // NNodos; integer)
-            NTrbjsXNodo = self.NumCasesExpected // self.UsaSlurm['NumNodos']  # Número de casos por nodo
+            # Calcula casos por nodo. Divide casos entre total de nodos pedidos
+            NTrbjsXNodo = int(np__ceil(self.NumCasesExpected / self.UsaSlurm['NumNodos']))  # Número de casos por nodo
             # Calcula Número de casos restantes (NTrabajo % NNodos; resto, integer)
-            NTrbjsRest = self.NumCasesExpected % self.UsaSlurm['NumNodos']  # Número de casos por nodo
+            NTrbjsRest = NTrbjsXNodo - self.NumCasesExpected % self.UsaSlurm['NumNodos']  # Número de casos último nodo
+            # creates a list for number of jobs on each node
+            ListaNumTrbjs = [NTrbjsXNodo] * (self.UsaSlurm['NumNodos'] - 1) + [NTrbjsRest]
 
             #
             # ENVÍA A LOS NODOS EL COMANDO DE CALCULO PARA USARSE CON LA DATA ESCRITA
-            #
-            logger.info("Enviando casos a nodos...")
-            # Crea lista de números de trabajos para iterar en el for loop
-            ListaNumTrbjs = [NTrbjsXNodo] * self.UsaSlurm['NumNodos']
-            if NTrbjsRest:  # si existe una división no entera (resto de división != 0)
-                ListaNumTrbjs += [NTrbjsRest]
-            # identifica cuantos sub-directorios existen. No existen más directorios de los que se escriben
-            c = 1  # contador necesario para mantener última posición en la lista de dirs
-            logger.info("Dividiendo casos en {} nodos, cada uno con {} trabajos respectivamente.".format(len(ListaNumTrbjs), ListaNumTrbjs))
-            # Envía grupos de trabajos/casos (en serie) a los nodos
+            msg = "Dividing {} cases into groups of {} across {} nodes.".format( self.NumCasesExpected,
+                                                                                 ListaNumTrbjs,
+                                                                                 self.UsaSlurm['NumNodos'])
+            logger.info(msg)
+
+            # Total number of stages across the cases that converged to something
+            TotalSuccededStages = TotalCasesSent = 0
+
+            # llama Envía grupos de trabajos/casos a los nodos
+            logger.info("calling funtion to send to nodes...")
+
+            # Ajuste parámetros de paralelismo para escribir archivos
+            if self.UsaSlurm['NumNodos']:
+                msg = "Parallel mode activated. Using maximum of {} simultaneous processes."
+                if isinstance(self.UsaSlurm['NumNodos'], int):
+                    Ncpu = self.UsaSlurm['NumNodos']
+                elif self.UsaSlurm['NumNodos'] == 'Max':
+                    Ncpu = mu__cpu_count()
+                logger.info( msg.format(Ncpu) )
+                Pool = mu__Pool(Ncpu)
+                Results = []
+
             for NumTrbjs in ListaNumTrbjs:
-                # Obtiene los 'NumTrbjs' primeros encontrados y envía trabajos
-                # send_work(...)
-                c += NumTrbjs
-                print("NumTrbjs:", NumTrbjs)
-                # print("Res:", Res)
+                if bool(self.UsaSlurm['NumNodos']):  # En paralelo
+                    Results.append( Pool.apply_async(send_work,
+                                                     (),
+                                                     {})
+                                    )
+                else:
+                    NumSuccededStages = send_work( self.Base_PyGeneratorDemand, self.BD_BaseGenDisp,
+                                                   self.abs_InFilePath, self.abs_path_temp,
+                                                   self.abs_OutFilePath, TotalCasesSent)
+                    TotalSuccededStages += NumSuccededStages
+                TotalCasesSent += NumTrbjs
+
+            if self.UsaSlurm['NumNodos']:  # En paralelo
+                print("Executing paralelism calculations on power systems...")
+                # Obtiene los resultados del paralelismo, en caso de existir
+                for result in Results:
+                    NumSuccededStages = result.get()
+                    TotalSuccededStages += NumSuccededStages
 
             TotalStagesCases = self.NEta * self.NumCasesExpected
             RunTime = dt.now() - STime
@@ -297,8 +393,6 @@ class Simulation(object):
             logger.info("Solving cases in LOCAL MODE.")
             # Total number of stages across the cases that converged to something
             TotalSuccededStages = 0
-            # Crea lista con hidrologías de interés en los datos
-            ListaHidrologias = ['Humeda', 'Media', 'Seca']
 
             # Ajuste parámetros de paralelismo para escribir archivos
             if self.NumParallelCPU:
@@ -311,58 +405,15 @@ class Simulation(object):
                 Pool = mu__Pool(Ncpu)
                 Results = []
 
-            #
-            # Para cada caso escribe los datos en directorio temporal
-            #
             # Inicialize case executed counter
             CountCasesDone = 1
-            # Junta y escribe en sub-directorios cada caso (Serie de etapas) como un
-            # directorio, el cual contiene las base de datos independientes (Grilla)
-            for HidNom in ListaHidrologias:
-                # ---- Ajusta base de datos según Hidrología ----
-                # PEs por etapa asociadas a la Hidrología en cuestión
-                DF_PEsXEtapa = self.BD_Hidrologias_futuras[['PE ' + HidNom + ' dec']]
-                # Parámetros de cota-costo en hidrología actual. Indices: ['b', 'CVmin', 'CVmax', 'CotaMin', 'CotaMax']
-                DF_ParamHidEmb_hid = self.BD_ParamHidEmb_filtered.loc[HidNom]  # Accede al DataFrame del DataFrame Multindex
-                # Initialize reservoir's levels with PE's (excedence probability) as decimal across stages
-                DF_CotasEmbalsesXEtapa = pd__DataFrame(np__tile(DF_PEsXEtapa, (1, len(DF_ParamHidEmb_hid.columns))),
-                                                       columns = DF_ParamHidEmb_hid.columns,
-                                                       index = DF_PEsXEtapa.index)
-                # Obtiene las cotas Máximas y Mínimas de los embalses dada la hidrología actual
-                CotasMax = DF_ParamHidEmb_hid.loc['CotaMax'].values
-                CotasMin = DF_ParamHidEmb_hid.loc['CotaMin'].values
-                # Calcula el valor lineal dado por la PE en cada etapa, desde CotaMin hasta CotaMax. De cada Embalse
-                DF_CotasEmbalsesXEtapa = (CotasMax - CotasMin) * (1 - DF_CotasEmbalsesXEtapa) + CotasMin
-                DF_CVarReservoir_hid = calc_reservoir_costs_from_cota( DF_CotasEmbalsesXEtapa,
-                                                                       DF_ParamHidEmb_hid,
-                                                                       CostCurves = self.CostCurves)
-                # self.BD_seriesconf
-                # DF_CotasEmbalsesXEtapa
-                # DF_ParamHidEmb_hid
-                # self.BD_ParamHidEmb
-                # DF_CostoCentrales = 
-                # ----
-
-                # Crea los generadores de demanda y despacho por caso
-                PyGeneratorDemand = aux_funcs.GeneradorDemanda(StageIndexesList=self.BD_Etapas.index.tolist(),
-                                                               DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
-                                                               DF_TasaCReg=self.BD_DemProy[['TasaCliReg']],  # pandas DataFrame
-                                                               DF_DesvDec=self.BD_DemProy[['Desv_decimal']],  # pandas DataFrame
-                                                               DictTypoCargasEta=self.DictTypoCargasEta,  # diccionario
-                                                               seed=self.UseRandomSeed)  # int, None
-                PyGeneratorDispatched = aux_funcs.GeneradorDespacho(StageIndexesList=self.BD_Etapas.index.tolist(),
-                                                                    Dict_TiposGen=self.DictTiposGenNoSlack,  # lista
-                                                                    DF_HistGenERNC=self.BD_HistGenRenovable,  # tupla de dos pandas DataFrame
-                                                                    DF_TSF=self.BD_TSFProy,  # para cada tecnología que recurra con falla se asigna
-                                                                    DF_PE_Hid=DF_PEsXEtapa,  # pandas DataFrame
-                                                                    DesvEstDespCenEyS=self.DesvEstDespCenEyS,  # float
-                                                                    DesvEstDespCenP=self.DesvEstDespCenP,  # float
-                                                                    seed=self.UseRandomSeed)  # int, None
+            # Start case generation
+            for HidNom in self.ListaHidrologias:
                 for NDem in range(1, self.NumVecesDem + 1):
                     for NGen in range(1, self.NumVecesGen + 1):
-                        # Note they overwrite themselfs to next use
-                        PyGeneratorDemand, PyGeneratorDemand2 = it__tee(PyGeneratorDemand, 2)
-                        PyGeneratorDispatched, PyGeneratorDispatched2 = it__tee(PyGeneratorDispatched, 2)
+                        # Note they overwrite themselfs to next use.
+                        self.Base_PyGeneratorDemand, PyGeneratorDemand = it__tee(self.Base_PyGeneratorDemand, 2)
+                        self.BD_BaseGenDisp[HidNom], PyGeneratorDispatched = it__tee(self.BD_BaseGenDisp[HidNom], 2)
 
                         # permite generar nombre del sub-directorio '{HidNom}_D{NDem}_G{NGen}'
                         CaseIdentifier = (HidNom, NDem, NGen)  # post-morten tag
@@ -371,14 +422,16 @@ class Simulation(object):
                             # Agrega la función con sus argumentos al Pool para ejecutarla en paralelo
                             Results.append( Pool.apply_async( core_calc.calc,
                                                               ( CountCasesDone, HidNom, self.BD_RedesXEtapa,
-                                                                self.BD_Etapas.index, DF_ParamHidEmb_hid,
-                                                                self.BD_seriesconf, DF_CVarReservoir_hid,
+                                                                self.BD_Etapas.index,
+                                                                self.BD_Hydro[HidNom]['DF_ParamHidEmb_hid'],
+                                                                self.BD_seriesconf,
+                                                                self.BD_Hydro[HidNom]['DF_CVarReservoir_hid'],
                                                                 self.MaxNumVecesSubRedes, self.MaxItCongIntra,
                                                                 ),
                                                               # No se pueden pasar argumentos en generadores en paralelo
                                                               { 'abs_OutFilePath': self.abs_OutFilePath,
-                                                                'DemGenerator': PyGeneratorDemand2,
-                                                                'DispatchGenerator': PyGeneratorDispatched2,
+                                                                'DemGenerator': PyGeneratorDemand,
+                                                                'DispatchGenerator': PyGeneratorDispatched,
                                                                 'in_node': False, 'CaseID': CaseIdentifier,
                                                                 }
                                                               )
@@ -386,12 +439,14 @@ class Simulation(object):
                         else:
                             # (En serie) Aplica directamente para cada caso
                             NumSuccededStages = core_calc.calc( CountCasesDone, HidNom, self.BD_RedesXEtapa,
-                                                                self.BD_Etapas.index, DF_ParamHidEmb_hid,
-                                                                self.BD_seriesconf, DF_CVarReservoir_hid,
+                                                                self.BD_Etapas.index,
+                                                                self.BD_Hydro[HidNom]['DF_ParamHidEmb_hid'],
+                                                                self.BD_seriesconf,
+                                                                self.BD_Hydro[HidNom]['DF_CVarReservoir_hid'],
                                                                 self.MaxNumVecesSubRedes, self.MaxItCongIntra,
                                                                 abs_OutFilePath= self.abs_OutFilePath,
-                                                                DemGenerator=PyGeneratorDemand2,
-                                                                DispatchGenerator=PyGeneratorDispatched2,
+                                                                DemGenerator=PyGeneratorDemand,
+                                                                DispatchGenerator=PyGeneratorDispatched,
                                                                 in_node=False, CaseID=CaseIdentifier,
                                                                 )
                             TotalSuccededStages += NumSuccededStages
@@ -543,32 +598,32 @@ class Simulation(object):
         #
         # Calcula y convierte valor a etapas de la desviación histórica de la demanda... (pandas Dataframe)
         BD_DemSistDesv = aux_funcs.DesvDemandaHistoricaSistema_a_Etapa( DFs_Entradas['df_in_scmfpl_histdemsist'],
-                                                                         BD_Etapas)
+                                                                        BD_Etapas)
         # Obtiene y convierte la demanda proyectada a cada etapas... (pandas Dataframe)
         BD_DemTasaCrecEsp = aux_funcs.TasaDemandaEsperada_a_Etapa( DFs_Entradas['df_in_smcfpl_proydem'],
-                                                                    BD_Etapas, self.FechaComienzo,
-                                                                    self.FechaTermino)
+                                                                   BD_Etapas, self.FechaComienzo,
+                                                                   self.FechaTermino)
         # Unifica datos de demanda anteriores por etapa (pandas Dataframe)
         BD_DemProy = pd__concat([BD_DemTasaCrecEsp, BD_DemSistDesv.abs()], axis = 'columns')
         ReturnList.append(BD_DemProy)
         # Almacena la PE de cada año para cada hidrología (pandas Dataframe)
         BD_Hidrologias_futuras = aux_funcs.Crea_hidrologias_futuras( DFs_Entradas['df_in_smcfpl_histhid'],
-                                                                      BD_Etapas, self.PEHidSeca, self.PEHidMed,
-                                                                      self.PEHidHum, self.FechaComienzo, self.FechaTermino,
-                                                                      seed=self.UseRandomSeed)
+                                                                     BD_Etapas, self.PEHidSeca, self.PEHidMed,
+                                                                     self.PEHidHum, self.FechaComienzo, self.FechaTermino,
+                                                                     seed=self.UseRandomSeed)
         ReturnList.append(BD_Hidrologias_futuras)
         # Respecto a la base de datos 'in_smcfpl_ParamHidEmb' en DFs_Entradas['df_in_smcfpl_ParamHidEmb'], ésta es dependiente de hidrologías solamente
         # Respecto a la base de datos 'in_smcfpl_seriesconf' en DFs_Entradas['df_in_smcfpl_seriesconf'], ésta define configuración hidráulica fija
         # Almacena la TSF por etapa de las tecnologías (pandas Dataframe)
         BD_TSFProy = aux_funcs.TSF_Proyectada_a_Etapa( DFs_Entradas['df_in_smcfpl_tsfproy'],
-                                                        BD_Etapas, self.FechaComienzo)
+                                                       BD_Etapas, self.FechaComienzo)
         ReturnList.append(BD_TSFProy)
         # Convierte los dataframe de mantenimientos a etapas dentro de un diccionario con su nombre como key
         BD_MantEnEta = aux_funcs.Mantenimientos_a_etapas( DFs_Entradas['df_in_smcfpl_mantbarras'],
-                                                           DFs_Entradas['df_in_smcfpl_manttx'],
-                                                           DFs_Entradas['df_in_smcfpl_mantgen'],
-                                                           DFs_Entradas['df_in_smcfpl_mantcargas'],
-                                                           BD_Etapas)
+                                                          DFs_Entradas['df_in_smcfpl_manttx'],
+                                                          DFs_Entradas['df_in_smcfpl_mantgen'],
+                                                          DFs_Entradas['df_in_smcfpl_mantcargas'],
+                                                          BD_Etapas)
         ReturnList.append(BD_MantEnEta)
         # Por cada etapa crea el SEP correspondiente (...paralelizable...) (dict of pandaNetworks and extradata)
         BD_RedesXEtapa = Crea_SEPxEtapa( DFs_Entradas['df_in_smcfpl_tecbarras'],
@@ -588,8 +643,8 @@ class Simulation(object):
         ReturnList.append(BD_ParamHidEmb)
         # print('BD_HistGenRenovable:', BD_HistGenRenovable)
         BD_HistGenRenovable = aux_funcs.GenHistorica_a_Etapa(BD_Etapas,
-                                                              DFs_Entradas['df_in_smcfpl_histsolar'],
-                                                              DFs_Entradas['df_in_smcfpl_histeolicas'])
+                                                             DFs_Entradas['df_in_smcfpl_histsolar'],
+                                                             DFs_Entradas['df_in_smcfpl_histeolicas'])
         ReturnList.append(BD_HistGenRenovable)
         # print("BD_HistGenRenovable:", BD_HistGenRenovable)
         BD_seriesconf = DFs_Entradas['df_in_smcfpl_seriesconf']

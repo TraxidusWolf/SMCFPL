@@ -23,32 +23,13 @@ from numpy import cos as np__cos, real as np__real, sign as np__sign
 # from smcfpl.aux_funcs import overloaded_trafo3w as aux_smcfpl__overloaded_trafo3w
 from smcfpl.in_out_proc import write_output_case as smcfpl__in_out_proc__write_output_case
 from smcfpl.aux_funcs import TipoCong as aux_funcs__TipoCong
+from smcfpl.aux_funcs import setup_logger as aux_funcs__setup_logger
 from smcfpl.redispatch import redispatch as redispatch__redispatch, make_Bbus_Bpr_A as redispatch__make_Bbus_Bpr_A
 from smcfpl.redispatch import power_over_congestion as redispatch__power_over_congestion
 from smcfpl.smcfpl_exceptions import *
 
 import logging
 
-
-def setup_logger(logger_name, log_file='.', level=logging.DEBUG):
-    """ If log_file is declared (different than '.') log file is used.
-    """
-    logg = logging.getLogger(logger_name)
-    formatter = logging.Formatter('[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s')
-    if log_file != '.':
-        fileHandler = logging.FileHandler(log_file, mode='w')
-        fileHandler.setFormatter(formatter)
-        logg.addHandler(fileHandler)
-    streamHandler = logging.StreamHandler()
-    streamHandler.setFormatter(formatter)
-
-    logg.setLevel(level)
-    logg.addHandler(streamHandler)
-
-
-# create logger
-setup_logger('stdout_only')
-setup_logger('Intra_congestion', r'IntraCongs.log')
 # get loggers created
 logger = logging.getLogger('stdout_only')
 logger_IntraCong = logging.getLogger('Intra_congestion')
@@ -470,7 +451,7 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, in
         print("IntraCounter:", IntraCounter)
         print("******")
         loading_percent = Grid['res_' + TypeElmnt].at[IndTable, 'loading_percent']
-        msg = ','.join( [str(StageNum), str(CaseNum), TypeElmnt, str(IndTable), str(loading_percent)])
+        msg = ','.join( ['', str(StageNum), str(CaseNum), TypeElmnt, str(IndTable), str(loading_percent)])
         logger_IntraCong.info(msg)
 
         if IntraCounter >= MaxItCongIntra:

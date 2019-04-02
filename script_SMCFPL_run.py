@@ -32,7 +32,8 @@ Sim = smcfpl.Simulation(
     # NumParallelCPU = 'Max',  # Puede ser False: No usa paralelismo en escritura ni lectura ni cálculo, 'Max' para
     # utilizar todos lo procesadores fisicos, o un integer para modificar el tamaño de la pool
     UsaSlurm=False,
-    # UsaSlurm = dict(NumNodos=2, NodeWaittingTime=dt.timedelta(seconds=10), ntasks=1, cpu_per_tasks=2),  # False para no ser considerado
+    # UsaSlurm = dict(NumNodos=2, NodeWaittingTime=dt.timedelta(seconds=10), ntasks=1, cpu_per_tasks=2),
+    # NumNodos es igual que NumParallelCPU (None, int, 'Max'), este último se usa dentro de nodos cuan está activado Slurm.
     Working_dir = '.',
     UseTempFolder = True,  # create a folder called 'TempData' in 'Working_dir'.
     RemovePreTempData = False,  # only considered if UseTempFolder == True. Beware! 'TempData' directory will be completyle errased.

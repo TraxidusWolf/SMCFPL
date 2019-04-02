@@ -19,9 +19,7 @@ import locale
 import logging
 
 locale.setlocale(locale.LC_ALL, 'es_ES.utf8')
-logging.basicConfig(level=logging.DEBUG,
-                    format="[%(levelname)s][%(asctime)s] - %(message)s")
-logger = logging.getLogger()
+# logger = logging.getLogger('stdout_only')
 
 
 def date_parser(x):
@@ -32,6 +30,23 @@ def print_full_df():
     # allow print all panda columns
     pd__set_option('precision', 4)
     pd__set_option('expand_frame_repr', False)
+
+
+def setup_logger(logger_name, log_file='.', level=logging.DEBUG):
+    """ If log_file is declared (different than '.') log file is used.
+    """
+    logg = logging.getLogger(logger_name)
+    formatter = logging.Formatter('[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s')
+    if log_file != '.':
+        fileHandler = logging.FileHandler(log_file, mode='w')
+        fileHandler.setFormatter(formatter)
+        logg.addHandler(fileHandler)
+    streamHandler = logging.StreamHandler()
+    streamHandler.setFormatter(formatter)
+
+    logg.setLevel(level)
+    logg.addHandler(streamHandler)
+    logg.propagate = False  # avoid multiple logging messages
 
 
 def Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref_fija=True):

@@ -8,23 +8,14 @@ from os import listdir as os__listdir
 from os.path import exists as os__path__exists
 from sys import path as sys__path
 from multiprocessing import cpu_count as mu__cpu_count, Pool as mu__Pool
+
 import time
-
 import logging
-logging.basicConfig(level=logging.DEBUG,
-                    format="[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s")
-logger = logging.getLogger()
+logger = logging.getLogger('stdout_only')
 
 
-def send_work( NNodos=1, WTime=dt__timedelta(days=0, hours=0, minutes=5, seconds=0), NTasks=1,
-               ntasks_per_node=1, CPUxTask=1, SMCFPL_dir=os__getcwd(), TempData_dir=os__getcwd(),
-               DirsUsar=[], NumTrbjsHastaAhora=1, NTotalCasos=1, StageIndexesList=[],
-               NumParallelCPU=False, MaxItCongInter=1, MaxItCongIntra=1 ):
+def send_work(Instance):
     """
-        Por cada llamada a esta función se ejecuta la linea de comando que llama al archivo
-        'NucleoCalculo.py' de la biblioteca SMCFPL de python 3.6. a ejecutarse en los Nodos.
-        Espera los resultados de su ejecución según los parámetros (argumentos) que acompañan
-        a este función.
     """
     logger.debug("!Enviando grupo de casos {}/{} a nodos...".format(NumTrbjsHastaAhora + len(DirsUsar), NTotalCasos))
     # Agrega al path la ruta del directorio que contiene la biblioteca de SMCFPL python
@@ -88,8 +79,7 @@ def send_work( NNodos=1, WTime=dt__timedelta(days=0, hours=0, minutes=5, seconds
         # Complementa comando sbatch
         sbatch_cmd += ["-D", "{OsSep}data{OsSep}{cwd}".format(OsSep=os__sep, cwd=TempData_dir)]
         sbatch_cmd += ["-N", "{NNodos}".format(NNodos=NNodos)]
-        sbatch_cmd += ["-n", "{ntasks}".format(ntasks=NTasks)]
-        sbatch_cmd += ["---ntasks-per-node", "{ntasks_per_node}".format(ntasks_per_node=ntasks_per_node)]
+        sbatch_cmd += ["--ntasks-per-node", "{ntasks_per_node}".format(ntasks_per_node=ntasks_per_node)]
         sbatch_cmd += ["-c", "{cpu_per_task}".format(cpu_per_task=CPUxTask)]
         sbatch_cmd += ["-o", "outFile_{file_name}-{FileNum}_JId".format(file_name='NucleoCalculo', FileNum=ContadorCasos)]
         sbatch_cmd += ["-e", "errFile_{file_name}-{FileNum}_JId".format(file_name='NucleoCalculo', FileNum=ContadorCasos)]
