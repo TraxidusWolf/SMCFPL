@@ -188,13 +188,12 @@ class Simulation(object):
 
         #
         # Creates the Demand base generator for cases
-        self.Base_PyGeneratorDemand = aux_funcs.GeneradorDemanda(StageIndexesList=self.BD_Etapas.index.tolist(),
-                                                                 DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
-                                                                 DF_TasaCReg=self.BD_DemProy[['TasaCliReg']],  # pandas DataFrame
-                                                                 DF_DesvDec=self.BD_DemProy[['Desv_decimal']],  # pandas DataFrame
-                                                                 DictTypoCargasEta=self.DictTypoCargasEta,  # diccionario
-                                                                 seed=self.UseRandomSeed)  # int, None
-        #
+        # self.Base_PyGeneratorDemand = aux_funcs.GeneradorDemanda(StageIndexesList=self.BD_Etapas.index.tolist(),
+        #                                                          DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
+        #                                                          DF_TasaCReg=self.BD_DemProy[['TasaCliReg']],  # pandas DataFrame
+        #                                                          DF_DesvDec=self.BD_DemProy[['Desv_decimal']],  # pandas DataFrame
+        #                                                          DictTypoCargasEta=self.DictTypoCargasEta,  # diccionario
+        #                                                          seed=self.UseRandomSeed)  # int, None
         # Creates a hidrology databases and saves it in:
         #    BD_Hydro = {HidNom: { 'DF_PEsXEtapa': DF_PEsXEtapa,
         #                          'DF_ParamHidEmb_hid': DF_ParamHidEmb_hid,
@@ -229,23 +228,12 @@ class Simulation(object):
             DF_CostoCentrales = pd__DataFrame(index=DF_CVarReservoir_hid.index)
             for indx, (Reservoir, GenNom, FuncCost) in self.BD_seriesconf_filtered.iterrows():
                 DF_CostoCentrales = DF_CostoCentrales.assign(**{GenNom: DF_CVarReservoir_hid[Reservoir]})
-
-            # Crea los generadores de despacho por cada hidrología
-            self.BD_BaseGenDisp[HidNom] = aux_funcs.GeneradorDespacho(StageIndexesList=self.BD_Etapas.index.tolist(),
-                                                                      Dict_TiposGen=self.DictTiposGenNoSlack,  # lista
-                                                                      DF_HistGenERNC=self.BD_HistGenRenovable,  # tupla de dos pandas DataFrame
-                                                                      DF_TSF=self.BD_TSFProy,  # para cada tecnología que recurra con falla se asigna
-                                                                      DF_PE_Hid=DF_PEsXEtapa,  # pandas DataFrame
-                                                                      DesvEstDespCenEyS=self.DesvEstDespCenEyS,  # float
-                                                                      DesvEstDespCenP=self.DesvEstDespCenP,  # float
-                                                                      seed=self.UseRandomSeed)  # int, None
             # Updates the dictionary
             self.BD_Hydro[HidNom]['DF_PEsXEtapa'] = DF_PEsXEtapa
             self.BD_Hydro[HidNom]['DF_ParamHidEmb_hid'] = DF_ParamHidEmb_hid
             self.BD_Hydro[HidNom]['DF_CotasEmbalsesXEtapa'] = DF_CotasEmbalsesXEtapa
             self.BD_Hydro[HidNom]['DF_CVarReservoir_hid'] = DF_CVarReservoir_hid
             self.BD_Hydro[HidNom]['DF_CostoCentrales'] = DF_CostoCentrales
-            # ---- self.BD_BaseGenDisp[HidNom] is not saved because generators can't be pickled
 
         #
         # checks for temporal directory. Mainly debugging process
@@ -275,7 +263,7 @@ class Simulation(object):
         msg = "Inicialization of Simulation class finished after {} [hr], {} [min] and {} [s].".format(
             hours, minutes, seconds + RunTime.microseconds * 1e-6)
         logger.info(msg)
-        logger.debug("! Initialization class Simulation(...) Finished! (create_elements.py)")
+        logger.debug("! Initialization class Simulation(...) Finished!")
 
     def run(self):
         logger.debug("Running method Simulation.run()...")
@@ -411,14 +399,35 @@ class Simulation(object):
             for HidNom in self.ListaHidrologias:
                 for NDem in range(1, self.NumVecesDem + 1):
                     for NGen in range(1, self.NumVecesGen + 1):
-                        # Note they overwrite themselfs to next use.
-                        self.Base_PyGeneratorDemand, PyGeneratorDemand = it__tee(self.Base_PyGeneratorDemand, 2)
-                        self.BD_BaseGenDisp[HidNom], PyGeneratorDispatched = it__tee(self.BD_BaseGenDisp[HidNom], 2)
+                        # get relevant values form hydrology
+                        # DF_CotasEmbalsesXEtapa = self.BD_Hydro[HidNom]['DF_CotasEmbalsesXEtapa']
+                        # DF_CostoCentrales = self.BD_Hydro[HidNom]['DF_CostoCentrales']
 
+                        # Creates an iterator (class type with __next__ dunder) for each loop (different values)
+                        instance_IterDem = aux_funcs.IteratorDemand(StageIndexesList=self.BD_Etapas.index.tolist(),
+                                                                    DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
+                                                                    DF_TasaCReg=self.BD_DemProy[['TasaCliReg']],  # pandas DataFrame
+                                                                    DF_DesvDec=self.BD_DemProy[['Desv_decimal']],  # pandas DataFrame
+                                                                    DictTypoCargasEta=self.DictTypoCargasEta,  # diccionario
+                                                                    seed=self.UseRandomSeed)  # int, None
+                        instance_IterDispatched = aux_funcs.IteratorDespatch(StageIndexesList=self.BD_Etapas.index.tolist(),
+                                                                             DF_GenType_per_unit=self.DictTiposGenNoSlack,  # dict of numpy array
+                                                                             DF_HistGenERNC=self.BD_HistGenRenovable,  # tupla de dos pandas DataFrame
+                                                                             DF_TSF=self.BD_TSFProy,  # para cada tecnología que recurra con falla se asigna
+                                                                             DF_PE_Hid=self.BD_Hydro[HidNom]['DF_PEsXEtapa'],  # pandas DataFrame
+                                                                             DesvEstDespCenEyS=self.DesvEstDespCenEyS,  # float
+                                                                             DesvEstDespCenP=self.DesvEstDespCenP,  # float
+                                                                             seed=self.UseRandomSeed)  # int, None
                         # permite generar nombre del sub-directorio '{HidNom}_D{NDem}_G{NGen}'
                         CaseIdentifier = (HidNom, NDem, NGen)  # post-morten tag
 
                         if bool(self.NumParallelCPU):  # En paralelo
+                            # Results.append(
+                            #     Pool.apply_async(
+                            #         core_calc.vacio, (HidNom, NDem, NGen, instance_IterDem, instance_IterDispatched)
+                            #         )
+                            #     )
+
                             # Agrega la función con sus argumentos al Pool para ejecutarla en paralelo
                             Results.append( Pool.apply_async( core_calc.calc,
                                                               ( CountCasesDone, HidNom, self.BD_RedesXEtapa,
@@ -430,8 +439,8 @@ class Simulation(object):
                                                                 ),
                                                               # No se pueden pasar argumentos en generadores en paralelo
                                                               { 'abs_OutFilePath': self.abs_OutFilePath,
-                                                                'DemGenerator': PyGeneratorDemand,
-                                                                'DispatchGenerator': PyGeneratorDispatched,
+                                                                'DemGenerator': instance_IterDem,
+                                                                'DispatchGenerator': instance_IterDispatched,
                                                                 'in_node': False, 'CaseID': CaseIdentifier,
                                                                 }
                                                               )
@@ -445,37 +454,38 @@ class Simulation(object):
                                                                 self.BD_Hydro[HidNom]['DF_CVarReservoir_hid'],
                                                                 self.MaxNumVecesSubRedes, self.MaxItCongIntra,
                                                                 abs_OutFilePath= self.abs_OutFilePath,
-                                                                DemGenerator=PyGeneratorDemand,
-                                                                DispatchGenerator=PyGeneratorDispatched,
+                                                                DemGenerator=instance_IterDem,
+                                                                DispatchGenerator=instance_IterDispatched,
                                                                 in_node=False, CaseID=CaseIdentifier,
                                                                 )
                             TotalSuccededStages += NumSuccededStages
                         CountCasesDone += 1
 
             if self.NumParallelCPU:  # En paralelo
-                print("Executing paralelism calculations on power systems...")
+                logger.info("Executing paralelism calculations on power system cases...")
                 # Obtiene los resultados del paralelismo, en caso de existir
                 for result in Results:
                     NumSuccededStages = result.get()
-                    TotalSuccededStages += NumSuccededStages
+                    # TotalSuccededStages += NumSuccededStages
 
-        TotalStagesCases = self.NEta * CountCasesDone
+        print("NumSuccededStages:\n", NumSuccededStages)
+        # TotalStagesCases = self.NEta * CountCasesDone
         RunTime = dt.now() - STime
         minutes, seconds = divmod(RunTime.seconds, 60)
         hours, minutes = divmod(minutes, 60)
         msg = "Finished successfully {}/{} stages ({:.2f}%) across {} cases of {} stages, "
         msg += "after {} [hr], {} [min] and {} [s]."
-        msg = msg.format( TotalSuccededStages, TotalStagesCases,
-                          TotalSuccededStages / TotalStagesCases * 100,
-                          CountCasesDone - 1, self.NEta,
-                          hours, minutes, seconds + RunTime.microseconds * 1e-6)
-        logger.info(msg)
+        # msg = msg.format( TotalSuccededStages, TotalStagesCases,
+        #                   TotalSuccededStages / TotalStagesCases * 100,
+        #                   CountCasesDone - 1, self.NEta,
+        #                   hours, minutes, seconds + RunTime.microseconds * 1e-6)
+        # logger.info(msg)
         logger.debug("Ran of method Simulation.run(...) finished!")
 
     def ManageTempData(self, FileFormat):
         """ Manage the way to detect temp folder, in order to create temporarly files if requested or create them from scratch.
 
-            Returns tuple of all databases requiered.
+            Returns tuple of all databases required.
         """
         if self.UseTempFolder:
             if os__path__isdir(self.abs_path_temp):
@@ -503,7 +513,7 @@ class Simulation(object):
             return self.Create_DataBases()
 
     def check_for_DataBases_in_temp_folder(self, abs_path_folder, formatFile='pickle'):
-        """ Checks for the folowwing databases to exist within abs_path_folder:
+        """ Checks for the following databases to exist within abs_path_folder:
                     BD_Etapas.p
                     BD_DemProy.p
                     BD_Hidrologias_futuras.p
@@ -689,7 +699,7 @@ def Crea_Etapas(DF_MantBarras, DF_MantTx, DF_MantGen, DF_MantLoad, DF_Solar, DF_
         Etapas = Crea_Etapas(DF_MantBarras, DF_MantGen, DF_MantTx, DF_MantLoad, DF_Solar, DF_Eolicas, FechaComienzo, FechaTermino)
 
     Etapas: Pandas DataFrame con las siguientes columnas
-            'EtaNum': (int),
+            'StageNum': (int),
             'FechaIni': (str),
             'FechaFin': (str),
             'HoraDiaIni':(int),
@@ -931,22 +941,22 @@ def Crea_SEPxEtapa( DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w,
 
         Retorna un diccionario con los NetWorks PandaPower para cada etapa, más diccionario que no podía incorporarse directamente a la red
     """
-    logger.debug("! entrando en función: 'Crea_SEPxEtapa' (CrearElementos.py) ...")
+    logger.debug("! entrando en función: 'Crea_SEPxEtapa' ...")
     # Cuenta cantidad de etapas
     TotalEtas = DF_Etapas.shape[0]
     # Inicializa diccionario de salida con los índices de las etapas
     DictSalida = dict.fromkeys( DF_Etapas.index.tolist() )
     if not NumParallelCPU:
-        for EtaNum, Etapa in DF_Etapas.iterrows():
-            # print("EtaNum:", EtaNum)
+        for StageNum, Etapa in DF_Etapas.iterrows():
+            # print("StageNum:", StageNum)
             Grid, ExtraData = CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
                                                      DF_TecTrafos3w, DF_TipoLineas, DF_TipoTrafos2w,
                                                      DF_TipoTrafos3w, DF_TecGen, DF_TecCargas,
-                                                     Dict_DF_Mantenimientos, EtaNum, Sbase_MVA,
+                                                     Dict_DF_Mantenimientos, StageNum, Sbase_MVA,
                                                      TotalEtas)
             # Agrega información creada al DictSalida
-            DictSalida[EtaNum] = {'PandaPowerNet': Grid}
-            DictSalida[EtaNum]['ExtraData'] = ExtraData
+            DictSalida[StageNum] = {'PandaPowerNet': Grid}
+            DictSalida[StageNum]['ExtraData'] = ExtraData
     else:   # en parallel
         if isinstance(NumParallelCPU, int):
             Ncpu = NumParallelCPU
@@ -957,7 +967,7 @@ def Crea_SEPxEtapa( DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w,
         Pool = mu__Pool(Ncpu)
         Results = []
         # Por cada Etapa rellena el Pool
-        for EtaNum, Etapa in DF_Etapas.iterrows():
+        for StageNum, Etapa in DF_Etapas.iterrows():
             # Rellena el Pool con los tasks correspondientes
             Results.append( [
                 Pool.apply_async(CompletaSEP_PandaPower, (DF_TecBarras, DF_TecLineas,
@@ -965,23 +975,23 @@ def Crea_SEPxEtapa( DF_TecBarras, DF_TecLineas, DF_TecTrafos2w, DF_TecTrafos3w,
                                                           DF_TipoLineas,  DF_TipoTrafos2w,
                                                           DF_TipoTrafos3w, DF_TecGen,
                                                           DF_TecCargas, Dict_DF_Mantenimientos,
-                                                          EtaNum, Sbase_MVA, TotalEtas),
+                                                          StageNum, Sbase_MVA, TotalEtas),
                                  ),
-                EtaNum])
+                StageNum])
         # Obtiene los resultados del paralelismo y asigna a variables de interés
-        for result, EtaNum in Results:
+        for result, StageNum in Results:
             Grid, ExtraData = result.get()
-            DictSalida[EtaNum] = {'PandaPowerNet': Grid}
-            DictSalida[EtaNum]['ExtraData'] = ExtraData
+            DictSalida[StageNum] = {'PandaPowerNet': Grid}
+            DictSalida[StageNum]['ExtraData'] = ExtraData
 
-    logger.debug("! saliendo en función: 'Crea_SEPxEtapa' (CrearElementos.py) ...")
+    logger.debug("! saliendo en función: 'Crea_SEPxEtapa' ...")
     return DictSalida
 
 
 def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
                            DF_TecTrafos3w, DF_TipoLineas, DF_TipoTrafos2w,
                            DF_TipoTrafos3w, DF_TecGen, DF_TecCargas,
-                           Dict_DF_Mantenimientos, EtaNum, Sbase_MVA,
+                           Dict_DF_Mantenimientos, StageNum, Sbase_MVA,
                            TotalEtas):
     """
         Función que recibe la pelota para el completado de la red PandaPower en una etapa determinada.
@@ -1035,10 +1045,10 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
 
         Retorna una tupla con (PandaPower Grid filled, ExtraData)
     """
-    logger.debug("! Creando SEP en etapa {}/{} ...".format(EtaNum, TotalEtas))
+    logger.debug("! Creating PS for Stage {}/{} ...".format(StageNum, TotalEtas))
     #
     # 1.- Inicializa el SEP PandaPower y diccionario ExtraData con datos que no pueden incorporarse en el Grid
-    Grid = pp__create_empty_network(name='EtaNum {}'.format(EtaNum), f_hz=50, sn_kva=Sbase_MVA * 1e3)
+    Grid = pp__create_empty_network(name='StageNum {}'.format(StageNum), f_hz=50, sn_kva=Sbase_MVA * 1e3, add_stdtypes=False)
     ExtraData = {}
 
     """
@@ -1053,6 +1063,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
                                                           #
     """
     # 2.- Agrega los tipos a la red (lineas|trafos2w|trafos3w)
+    logger.debug("!! Adding branch types to stage {}/{} ...".format(StageNum, TotalEtas))
     pp__create_std_types(Grid, data=DF_TipoLineas.T.to_dict(), element='line')  # tipos de lineas
     pp__create_std_types(Grid, data=DF_TipoTrafos2w.T.to_dict(), element='trafo')  # tipos de trafos2w
     pp__create_std_types(Grid, data=DF_TipoTrafos3w.T.to_dict(), element='trafo3w')  # tipos de trafos3w
@@ -1066,11 +1077,11 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
          #   #  #      #      #   #          #  #  #   #  #      #      #   #      #
           ###   #       ###    ####         ####    ####  #      #       ####  ####
     """
-    # logger.debug("! 'Crea_SEPxEtapa':Creando barras en EtaNum {} ...".format(EtaNum))
+    logger.debug("!! Creating buses in StageNum {} ...".format(StageNum))
     # Verifica si existen mantenimientos de barras para la etapa, a modo de filtrarlas
-    if EtaNum in Dict_DF_Mantenimientos['df_in_smcfpl_mantbarras'].index:
+    if StageNum in Dict_DF_Mantenimientos['df_in_smcfpl_mantbarras'].index:
         # 3.- Identifica el grupo (pandas DataFrame) de mantenimientos de barra en la etapa y, no las considerada como disponibles
-        BarsEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_mantbarras'].loc[[EtaNum], ['BarNom']]  # Una sola columna de interés
+        BarsEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_mantbarras'].loc[[StageNum], ['BarNom']]  # Una sola columna de interés
         BarrasDisp = DF_TecBarras.drop(labels=BarsEnMant['BarNom'], axis='index')
     else:   # No hay mantenimientos de barras
         BarrasDisp = DF_TecBarras
@@ -1093,14 +1104,14 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
          #   #  #      #      #   #         #        #    #   #  #      #   #      #
           ###   #       ###    ####         #####   ###   #   #   ###    ####  ####
     """
-    # logger.debug("! 'Crea_SEPxEtapa':Creando Lineas en EtaNum {} ...".format(EtaNum))
+    logger.debug("!! Creating Lines in StageNum {} ...".format(StageNum))
     # 4.- Verifica si existen mantenimientos de líneas para la etapa
     LinsDisp = DF_TecLineas.copy(deep=True)  # innocent until proven guilty
-    CondCalcMant = (EtaNum in Dict_DF_Mantenimientos['df_in_smcfpl_manttx'][
+    CondCalcMant = (StageNum in Dict_DF_Mantenimientos['df_in_smcfpl_manttx'][
         Dict_DF_Mantenimientos['df_in_smcfpl_manttx']['TipoElmn'] == 'Linea' ].index) & (not LinsDisp.empty)
     if CondCalcMant:
         # 4.1- Obtiene los elementos de Tx en mantención
-        LinsEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_manttx'].loc[[EtaNum], ColumnasLineas]
+        LinsEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_manttx'].loc[[StageNum], ColumnasLineas]
         # 4.2- Identifica el grupo (pandas DataFrame) con flag Operativa == True para sobrescribir parámetros, dejando primera coincidencia en caso de duplicados
         LinsEnMantOp = LinsEnMant[ LinsEnMant['Operativa'] & (LinsEnMant['TipoElmn'] == 'Linea') ].drop_duplicates(keep='first')
         # Genera DataFrame de líneas disponibles en la etapa filtrado
@@ -1130,13 +1141,13 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
          #   #  #      #      #   #           #    #      #   #   #     #   #  #      # # #
           ###   #       ###    ####           #    #       ####   #      ###   #####   # #
     """
-    # logger.debug("! 'Crea_SEPxEtapa':Creando Trf2w en EtaNum {} ...".format(EtaNum))
+    logger.debug("!! Creating Trf2w in StageNum {} ...".format(StageNum))
     Trafo2wDisp = DF_TecTrafos2w.copy(deep=True)  # innocent until proven guilty
     # 5.- Verifica si existen elementos en mantenimiento
-    CondCalcMant = (EtaNum in Dict_DF_Mantenimientos['df_in_smcfpl_manttx'][
+    CondCalcMant = (StageNum in Dict_DF_Mantenimientos['df_in_smcfpl_manttx'][
         Dict_DF_Mantenimientos['df_in_smcfpl_manttx']['TipoElmn'] == 'Trafo2w' ].index) & (not Trafo2wDisp.empty)
     if CondCalcMant:
-        Trafo2wEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_manttx'].loc[[EtaNum], ColumnasTrafos2w]  # DataFrame de Trafos2w y respectivas columnas
+        Trafo2wEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_manttx'].loc[[StageNum], ColumnasTrafos2w]  # DataFrame de Trafos2w y respectivas columnas
         # 5.1-identifica los trafos que se definan operativos, con flag Operativa == True para sobrescribir parámetros
         Trafo2wEnMantOp = Trafo2wEnMant[ Trafo2wEnMant['Operativa'] & (Trafo2wEnMant['TipoElmn'] == 'Trafo2w') ].drop_duplicates(keep='first')
         # 5.2-sobrescribe nuevos parámetros de los operativos
@@ -1167,13 +1178,13 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
          #   #  #      #      #   #           #    #      #   #   #     #   #  #   #  # # #
           ###   #       ###    ####           #    #       ####   #      ###    ###    # #
     """
-    # logger.debug("! 'Crea_SEPxEtapa':Creando Trf3w en EtaNum {} ...".format(EtaNum))
+    logger.debug("!! Creating Trf3w in StageNum {} ...".format(StageNum))
     Trafo3wDisp = DF_TecTrafos3w.copy(deep=True)  # innocent until proven guilty
     # 6.- Verifica si existen elementos en mantenimiento
-    CondCalcMant = (EtaNum in Dict_DF_Mantenimientos['df_in_smcfpl_manttx'][
-        Dict_DF_Mantenimientos['df_in_smcfpl_manttx']['TipoElmn'] == 'Trafo3w'].index) & (not Trafo3wDisp.empty)
+    CondCalcMant = (StageNum in Dict_DF_Mantenimientos['df_in_smcfpl_manttx'][
+        Dict_DF_Mantenimientos['df_in_smcfpl_manttx']['TipoElmn'] == 'Trafo3w' ].index) & (not Trafo3wDisp.empty)
     if CondCalcMant:
-        Trafo3wEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_manttx'].loc[[EtaNum], ColumnasTrafos3w]  # DataFrame de Trafos3w y respectivas columnas
+        Trafo3wEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_manttx'].loc[[StageNum], ColumnasTrafos3w]  # DataFrame de Trafos3w y respectivas columnas
         # 6.1- identifica los trafos que se definan operativos, con flag Operativa == True para sobrescribir parámetros
         Trafo3wEnMantOp = Trafo3wEnMant[ Trafo3wEnMant['Operativa'] & (Trafo3wEnMant['TipoElmn'] == 'Trafo3w') ].drop_duplicates(keep='first')
         # 6.2- sobrescribe nuevos parámetros de los operativos
@@ -1210,12 +1221,12 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
                                                                  #   #
                                                                   ###
     """
-    # logger.debug("! 'Crea_SEPxEtapa':Creando Cargas en EtaNum {} ...".format(EtaNum))
+    logger.debug("!! Creating Loads in StageNum {} ...".format(StageNum))
     CargasDisp = DF_TecCargas.copy(deep=True)  # innocent until proven guilty
     # 7.- Verifica si existen elementos en mantenimiento
-    CondCalcMant = (EtaNum in Dict_DF_Mantenimientos['df_in_smcfpl_mantcargas'].index) & (not CargasDisp.empty)
+    CondCalcMant = (StageNum in Dict_DF_Mantenimientos['df_in_smcfpl_mantcargas'].index) & (not CargasDisp.empty)
     if CondCalcMant:
-        CargasEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_mantcargas'].loc[[EtaNum], :]  # DataFrame de cargas y respectivas columnas
+        CargasEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_mantcargas'].loc[[StageNum], :]  # DataFrame de cargas y respectivas columnas
         # 7.1- identifica las cargas que se definan operativos, con flag Operativa == True para sobrescribir parámetros
         CargasEnMantOp = CargasEnMant[ CargasEnMant['Operativa'] ].drop_duplicates(keep='first')
         # 7.2- sobrescribe nuevos parámetros de los operativos
@@ -1245,14 +1256,14 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
          #   #  #      #      #   #         #   #  #      #   #
           ###   #       ###    ####          ###    ###   #   #
     """
-    # logger.debug("! 'Crea_SEPxEtapa':Creando Unidades en EtaNum {} ...".format(EtaNum))
+    logger.debug("!! Creating Units in StageNum {} ...".format(StageNum))
     GenDisp = DF_TecGen.copy(deep=True)  # innocent until proven guilty
     # 8.- Crea lista de parámetros que se modifican con los mantenimiento
     ColumnasGen = ['PmaxMW', 'PminMW', 'NomBarConn', 'CVar', 'EsSlack']
     # 8.1.- Verifica si existen elementos en mantenimiento
-    CondCalcMant = (EtaNum in Dict_DF_Mantenimientos['df_in_smcfpl_mantgen'].index) & (not GenDisp.empty)
+    CondCalcMant = (StageNum in Dict_DF_Mantenimientos['df_in_smcfpl_mantgen'].index) & (not GenDisp.empty)
     if CondCalcMant:
-        GenEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_mantgen'].loc[[EtaNum], :]  # DataFrame de cargas y respectivas columnas
+        GenEnMant = Dict_DF_Mantenimientos['df_in_smcfpl_mantgen'].loc[[StageNum], :]  # DataFrame de cargas y respectivas columnas
         # 8.2.- identifica los trafos que se definan operativos, con flag Operativa == True para sobrescribir parámetros
         GenEnMantOp = GenEnMant[ GenEnMant['Operativa'] ].drop_duplicates(keep='first')
         # 8.3.- sobrescribe nuevos parámetros de los operativos (en 'ColumnasGen')
@@ -1269,7 +1280,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
 
     # 8.7.- Identifica si NO se definió alguna unidad de referencia
     if not GenDisp['EsSlack'].any():
-        msg = "NO existe Unidad definida de referencia para la Etapa {}! ...".format(EtaNum)
+        msg = "NO existe Unidad definida de referencia para la Etapa {}! ...".format(StageNum)
         logger.warning(msg)
         GenRef = GenDisp.index[0]
         # 8.8.- Asigna primera coincidencia de generador dentro del pandas DataFrame como referencia
@@ -1278,7 +1289,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
         logger.warning(msg)
     # 8.9.- Identifica que exista solo una coincidencia en el pandas DataFrame 'GenDisp' de barras Slack
     elif GenDisp['EsSlack'].sum() > 1:
-        msg = "Existe más de una Unidad definida de referencia para la Etapa {}! Restableciendo flags 'EsSlack' ...".format(EtaNum)
+        msg = "Existe más de una Unidad definida de referencia para la Etapa {}! Restableciendo flags 'EsSlack' ...".format(StageNum)
         logger.warning(msg)
         GenRef = GenDisp.index[0]
         # 8.10.- Restablece todos los flag a 'False'
@@ -1308,7 +1319,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
     #      Notar que pueden definirse múltiples Generadores de referencia, los cuales podrán quedar separados eléctricamente.
     SetBarrasAisladas = pp__topology__unsupplied_buses(Grid)
     if bool(SetBarrasAisladas):
-        logger.warn("Existe sistema aislado sin conexión con Gen Ref. Eliminándolo...")
+        logger.warn("Unssuplied system buses from Gen Ref. Deleting it...")
         # Notar como los sistemas quedan separados cuando existe más de una Barra de Referencia,
         # dada por el generador de referencia (angV = 0). No da Warning cuando ésto ocurre.
         pp__drop_inactive_elements(Grid)  # Incluye logger Info level. From pandapower
@@ -1339,7 +1350,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
     # potencia permitida por lineas 'line'
     ExtraData['PmaxMW_line'] = LinsDisp[['Pmax_AB_MW', 'Pmax_BA_MW']]
 
-    logger.debug("! SEP en etapa {}/{} creado.".format(EtaNum, TotalEtas))
+    logger.info("! PS for stage {}/{} created.".format(StageNum, TotalEtas))
 
     return (Grid, ExtraData)
 

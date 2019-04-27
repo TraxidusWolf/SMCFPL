@@ -134,7 +134,7 @@ def Lee_Hoja_planilla(RutaCompleta, NombreHoja, EsParamHid, *args):
     if VariablesFaltantes:
         msg = "Dentro de hoja '{}', No se encontraron las variables requeridas: ".format(NombreHoja) + str(VariablesFaltantes)
         logger.error(msg)
-        raise InsuficientInputData("Variables de entrada insuficientes.")
+        raise InsuficientInputData("Insufficient input variables.")
 
     # Warning en caso de ingresarse un mismo elemento (barra, linea, trafo, gen, o carga) en el mismo archivo técnico
     EntradasTecnicas = ['in_smcfpl_tecbarras', 'in_smcfpl_teclineas', 'in_smcfpl_teclineas', 'in_smcfpl_tectrafos2w', 'in_smcfpl_tectrafos3w',
@@ -146,7 +146,7 @@ def Lee_Hoja_planilla(RutaCompleta, NombreHoja, EsParamHid, *args):
         Nrow, Ncol = df.shape
         dup = df.index.duplicated(keep='first')
         if dup.any():
-            # De existir algún nombre duplicado dentro de estas entradas, se alerta al usuario, dejando válida la primera coincidencia
+            # De existir algún nombre de elemento duplicado dentro de estas entradas, se alerta al usuario, dejando válida la primera coincidencia
             dup = df[dup].index.tolist()
             msg = "El archivo de entrada {} presenta las siguientes filas duplicadas: '{}'.".format(NombreHoja, ', '.join(dup))
             logger.warning(msg)

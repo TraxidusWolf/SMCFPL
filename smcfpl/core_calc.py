@@ -6,6 +6,7 @@ Este script esta diseñado para que pueda ser llamado como función 'Calc' a par
 """
 from pandapower import rundcpp as pp__rundcpp
 import time
+import warnings
 from os import sep as os__sep
 from itertools import chain as itertools__chain
 from pandapower import select_subnet as pp__select_subnet
@@ -19,6 +20,8 @@ from pandapower.powerflow import LoadflowNotConverged
 from pandas import DataFrame as pd__DataFrame
 from pandas import concat as pd__concat
 from numpy import cos as np__cos, real as np__real, sign as np__sign
+from numpy import isnan as np__isnan, seterr as np__seterr
+from scipy.sparse import linalg
 # from smcfpl.aux_funcs import overloaded_trafo2w as aux_smcfpl__overloaded_trafo2w
 # from smcfpl.aux_funcs import overloaded_trafo3w as aux_smcfpl__overloaded_trafo3w
 from smcfpl.in_out_proc import write_output_case as smcfpl__in_out_proc__write_output_case
@@ -33,6 +36,11 @@ import logging
 # get loggers created
 logger = logging.getLogger('stdout_only')
 logger_IntraCong = logging.getLogger('Intra_congestion')
+
+
+def vacio(HidNom, NDem, NGen, iterador1, iterador2):
+    print("HidNom:", HidNom, "; NDem:", NDem, "; NGen:", NGen)
+    return [(i, j) for i, j in zip(iterador1, iterador2)]
 
 
 def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
@@ -110,35 +118,60 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
 
         #
         # Verifica que el balance de potencia es posible en la etapa del caso (Gen-Dem)
-        DeltaP_Uninodal, msg = Power_available_after_dispatch(Grid)
-        # Corrobora factibilidad del despacho uninodal
-        if DeltaP_Uninodal > 0:  # De ser positivo indica PNS!
-            msg = msg.format(StageNum, len(StageIndexesList), CaseNum)
-            msg += '. ! Pasando a siguiente etapa.'
+        try:
+            # Corrobora factibilidad del despacho uninodal
+            Power_available_after_dispatch(Grid)
+        except DemandGreaterThanInstalledCapacity as msg:  # indica PNS!
+            msg = str(msg).format(StageNum, len(StageIndexesList), CaseNum)
+            msg += ' Skipping stage.'
             logger.warn(msg)
-            #
             # ¿Eliminar etapa?¿?
             # DF_Etapas.drop(labels=[StageNum], axis='index', inplace=True)
             # ¿Escribir PNS?
             continue  # Continua con siguiente etapa
 
         #
-        # Calcula el Flujo de Potencia Linealizado
-        pp__rundcpp(Grid, trafo_model='pi', trafo_loading='power',
-                    check_connectivity=True, r_switch=0.0, trafo3w_losses='hv')
+        # use to convert specific warnings with message to error.
+        warnings.filterwarnings('error', message='Matrix is exactly singular')
+
+        try:
+            #
+            # Calcula el Flujo de Potencia Linealizado
+            pp__rundcpp(Grid, trafo_model='pi', trafo_loading='power',
+                        check_connectivity=True, r_switch=0.0, trafo3w_losses='hv')
+        except linalg.linsolve.MatrixRankWarning:
+            msg = "Could not solve Linear powerflow for stage {}/{} in CaseNum {}. Skipping stage."
+            msg = msg.format(StageNum, len(StageIndexesList), CaseNum)
+            logger.warn(msg)
+            continue  # jumps to next stage.
+        except Exception as e:
+            print("Something else happened during rundcpp() ...")
+            print(e)
+            continue
+        else:  # excecute when not exception
+            msg = "LPF ran on Grid for stage {}/{} in case {}."
+            msg = msg.format(StageNum, len(StageIndexesList), CaseNum)
+            logger.debug(msg)
+        finally:  # excecute alter all cases (even exceptions)
+            pass
 
         #
         # Verifica que LA red externa se encuentre dentro de sus límites
-        GenRefExceeded, msg = check_limits_GenRef(Grid)
-        if GenRefExceeded == 1:  # PGenSlack es más Negativo que Pmax (sobrecargado)
-            msg = msg.format(StageNum, len(StageIndexesList), CaseNum)
-            msg += '. ! Pasando a siguiente etapa.'
+        try:
+            check_limits_GenRef(Grid)
+        except GeneratorReferenceOverloaded as msg:  # PGenSlack es más Negativo que Pmax (sobrecargado)
+            msg = str(msg).format(StageNum, len(StageIndexesList), CaseNum)
+            msg += ' Skipping stage.'
             logger.warn(msg)
             continue
-        elif GenRefExceeded == -1:  # PGenSlack es más Positivo que Pmin (comporta como carga)
-            msg = msg.format(StageNum, len(StageIndexesList), CaseNum)
-            msg += '. ! Pasando a siguiente etapa.'
+        except GeneratorReferenceUnderloaded as msg:  # PGenSlack es más Positivo que Pmin (comporta como carga)
+            msg = str(msg).format(StageNum, len(StageIndexesList), CaseNum)
+            msg += ' Skipping stage.'
             logger.warn(msg)
+            continue
+        except LoadFlowError as msg:
+            msg = str(msg) + " Skipping stage."
+            logger.error(msg)
             continue
 
         ################################################################################
@@ -294,8 +327,9 @@ def Power_available_after_dispatch(Grid):
     PDemSist = Grid['load']['p_kw'].sum()
     # Cuantifica diferencia entre generación y demanda máxima. Negativo implica sobra potencia
     DeltaP_Uninodal = PGenMaxSist + PGenSlackMax + PDemSist  # De ser positivo indica PNS!
-    msg = "No es posible abastecer la demanda en etapa {}/{} del caso {}!."
-    return DeltaP_Uninodal, msg
+    if DeltaP_Uninodal > 0:
+        msg = "No es posible abastecer la demanda en etapa {}/{} del caso {}!."
+        raise DemandGreaterThanInstalledCapacity(msg)
 
 
 def Adjust_transfo_power_limit_2_max_allowed(Grid, Dict_ExtraData):
@@ -332,7 +366,7 @@ def Adjust_transfo_power_limit_2_max_allowed(Grid, Dict_ExtraData):
         # Obtiene el nombre del lado del trafo3w que posee mayor potencia: 'p_hv_kw', 'p_mv_kw', 'p_lv_kw'
         pdSeries_SideMaxP = pd__concat([pdSeriesA, pdSeriesB, pdSeriesC], axis='columns').idxmax(axis='columns')
         pdSeries_SideMaxP = 'sn_' + pdSeries_SideMaxP.str[2:4] + '_kva'  # convierte a nombre requerido por potencia
-        # Obtiene el valor de potencia del lado correspondiente}
+        # Obtiene el valor de potencia del lado correspondiente
         List_ValMaxP = [Grid.trafo3w.loc[i, SideNom] for i, SideNom in zip(range(Grid.trafo3w.shape[0]), pdSeries_SideMaxP)]
         #
         # Obtiene la potencia máxima entrante/saliente del nodo con mayor flujo
@@ -359,21 +393,23 @@ def Adjust_transfo_power_limit_2_max_allowed(Grid, Dict_ExtraData):
 
 
 def check_limits_GenRef(Grid):
+    """ Allows to catch every unwishable outcome"""
     # Verifica Potencia para el GenSlack sea menor que su máximo (Negativo generación)
-    PotSobrante = Grid['ext_grid'].loc[0, 'max_p_kw'] - Grid['res_ext_grid'].loc[0, 'p_kw']
-    # Verifica Potencia para el GenSlack sea mayor que su mínimo (Negativo generación)
-    PotFaltante = Grid['res_ext_grid'].loc[0, 'p_kw'] - Grid['ext_grid'].loc[0, 'min_p_kw']
+    PotSobrante = Grid['ext_grid'].at[0, 'max_p_kw'] - Grid['res_ext_grid'].at[0, 'p_kw']
     # Acota rangos factibles de potencia de generación de GenSlack
     if PotSobrante > 0:  # PGenSlack es más Negativo que Pmax
-        msg = "El generador de referencia está sobrecargado en etapa {}/{} del caso {}!."
-        GenRefExceeded = 1
-    elif PotFaltante > 0:  # PGenSlack es más Positivo que Pmin
-        msg = "El generador de referencia está absorbiendo potencia en etapa {}/{} del caso {}!."
-        GenRefExceeded = -1
-    else:
-        GenRefExceeded = 0
-        msg = ""
-    return GenRefExceeded, msg
+        msg = "Reference generator is overloaded in stage {}/{} from case {}!."
+        raise GeneratorReferenceOverloaded(msg)
+
+    # Verifica Potencia para el GenSlack sea mayor que su mínimo (Negativo generación)
+    PotFaltante = Grid['res_ext_grid'].at[0, 'p_kw'] - Grid['ext_grid'].at[0, 'min_p_kw']
+    if PotFaltante > 0:  # PGenSlack es más Positivo que Pmin
+        msg = "Reference generator is underloaded in stage {}/{} from case {}!."
+        raise GeneratorReferenceUnderloaded(msg)
+
+    if np__isnan(PotFaltante) | np__isnan(PotSobrante):
+        msg = "External grid returns NaN value."
+        raise LoadFlowError(msg)
 
 
 def find_marginal_unit(Grid, Dict_ExtraData):

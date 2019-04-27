@@ -6,7 +6,43 @@ For later testing of simulation:
  ✔ (works!) Test with single maintenance line from '2018-06-01 00:00' to '2023-05-31 23:00' (same dates as limits) @done (19-03-22 01:48)
  ✔ (works lime single!) Test with double maintenance line from '2018-06-01 00:00' to '2023-05-31 23:00' (same dates as limits) @done (19-03-22 01:51)
  ☐ Does input table accept Pmin generator as negative number?
-General:
+
+How to create Input Data:
+ ☐ One possible way is to create the topological system within power factory and exporting it with a DPL program that copies all data to an excel. 
+ Things to take into account to create excel:
+  ☐ All buses, gen, tx elements and loads from simulation have to exist within in_scmfpl_tecbarras, in_scmfpl_tecgen, in_scmfpl_tectx, in_scmfpl_teccargas respectively, for the program to work or put one on maintenance.
+  ☐ Maintenance of buses make every other object connected inactive as well for while the bus is inactive.
+  ☐ Completely duplicated rows entries are not considered. Only one (the first, does not matter) element is considered as representative on any sheet.
+  ☐ In maintenance, when rows pointing to same element are detected with differente value on same period of time-stage, always the last value value is the one kept.
+  ☐ Branches among buses have to be defined as a unique element, in order to detect proper congestions. Otherwise they might no be found.
+  ☐ Parallel units can not be modeled according to pandapower limitations. A concetrated model is suggested.
+Considerations made for SMCFPL model:
+ ☐ Only Linear Power Flow is used
+ ☐ Only GGDF and FUPTG Distribution Factors are use as indicators for redispatch power on intra-congestions presence.
+ ☐ Marginal Costs are calculated as uninodal prices (no losses are considered)
+ ☐ Logistic S-funciton is used to interpolate the generation cost of each reservoir units
+ ☐ Costs for non-reservoir hydro unit from same 'hydro sequence' acquire same generation cost from their main upstream reservoir.
+ ☐ Hydro model (cuencas) is considered as a point like system, where no time delay occurs between hydro unit.
+ ☐ Only one reservoir per hydro series is allowed.
+ ☐ Three winding transformer are not considered for congestions, as they are a particular case to define it's power limits. They can be modeled, but when congestions are not corrected on them as they occur.
+ ☐ Past renewable generation (solar and wind) makes a very dependent future prediction according to its input data. A new algorith may have to be used to improve possible future scenarios.
+ ☐ Depending on past generation data input, renewable stages are limited between same characteristic values. That is, per every topological stage, it's possible to expect relatively the same number of renewable stages.
+ ☐ Maintenance of every element (bus, line, transf., gen. or load) defines the limits of each topological stage. This limit gets fuzzy when maintenances do not fit exactly to same date with hour detail.
+ ☐ For the moment, only three types of hydrology are allowed: wet, medium, and dry.
+ ☐ Only two Probability distribution functions (pdfs) are used to model dispatch and failure rate. Those pdfs are Gaussian and uniform, respectively. More precise precise pdfs like binomial may be used for failure rates.
+ ☐ At the time, only four wind generation zone are available to use on a system and only one for solar.
+Future work for SMCFPL model (possible features):
+ ☐ Allow the use of multiple loaf flow resolutions for same problem. Based on the fact the PandaPower is the resolution engine, it can use those algorithms to have knowledge of, for example, reactive power flows, voltage profiles, among others. These can be useful for further research.
+ ☐ Allow the usage of other file types aside from xlsx workbooks, like csv format files, or others (compatibility reasons).
+ ☐ Module or API for different programs to autogenerate the maintenance format sheets according to the power grid evolution. For example, the use of DPL or python programs to extract an excel file with required format on variations of the power net.
+ ☐ Direct GUI for SMCFPL model to temporarily visualize the Grid across stages or create it. Thus, the input file(s) can be easily created.
+ ☐ Try the use of different Distribution Factors, like PTDFs, or another non iterative methodology that makes as a result a higher rate of success to these stages with the presence of intra-congestions.
+ ☐ Incorporate the use of multiple curve types (or even, user-defined ones) for the relation among reservoir levels and hydro costs.
+ ☐ Define an hydro system (cuencas) that connect each hydro units from same series, allowing multi-reservoir capability. This characteristic gives a time delay for hydro generation. If reservoirs are dependent of each other, water use can be more precisely modeled.
+ ☐ A more precise hydrology prediction model may be implemented, as seen in latests TSO's PLP model. This model has to be set according to geographical model predictions of the zones where the Power Net is located.
+ ☐ Incorporate the flexibility to use more types of solar and/or wind generation, specifying zones where they are located.
+
+General para promgramar:
  ☐ Dar opción al inicializar elementos: A través de archivos csv o planilla @created(18-11-29 17:06)
  ☐ Desarrollar y terminar el archivo 'NucleoCalculo' @created(18-12-14 01:56)
  ☐ En NucleoCalculo.Calcular() permitir uso un generador por grilla aislada @created(19-01-07 18:36)

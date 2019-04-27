@@ -19,7 +19,8 @@ import locale
 import logging
 
 locale.setlocale(locale.LC_ALL, 'es_ES.utf8')
-# logger = logging.getLogger('stdout_only')
+# create local logger variable
+logger = logging.getLogger('stdout_only')
 
 
 def date_parser(x):
@@ -440,7 +441,7 @@ def TSF_Proyectada_a_Etapa(DF_TSFProy, DF_Etapas, FechaIniSim):
 
         Retorna un pandas DataFrame de columnas provenientes de 'DF_TSFProy'
     """
-    logger.debug("! entrando en función: 'TSF_Proyectada_a_Etapa' (aux_funcs.py) ...")
+    logger.debug("! entrando en función: 'TSF_Proyectada_a_Etapa'...")
     # 1.- Inicializa Dataframe de salida con TSF NaN values e indice de etapas (después rellena Nan values)
     DF_Salida = pd__DataFrame( np__NaN, index=DF_Etapas.index, columns=DF_TSFProy.columns.tolist()[1:] )
     # 2.- fija index 'Fecha' de DF_TSFProy
@@ -448,6 +449,7 @@ def TSF_Proyectada_a_Etapa(DF_TSFProy, DF_Etapas, FechaIniSim):
 
     if DF_TSFProy.empty:
         # 3.- Verifica si el archivo está vacío. En caso de estarlo se termina retornando todas las etapas con TSF nulos.
+        DF_Salida.fillna(value=0, axis='index', inplace=True)
         logger.warn("Archivo de entrada 'in_smcfpl_tsfproy' no posee datos! ...")
     else:  # No está vacío
         if DF_TSFProy.index[0] > FechaIniSim:
@@ -462,7 +464,7 @@ def TSF_Proyectada_a_Etapa(DF_TSFProy, DF_Etapas, FechaIniSim):
         # 8.- Rellena NaN siguientes con ultimo valor válido (method='ffill') y NaN restantes con cero
         DF_Salida.fillna(method='ffill', axis='index', inplace=True)
         DF_Salida.fillna(value=0, axis='index', inplace=True)
-    logger.debug("! saliendo en función: 'TSF_Proyectada_a_Etapa' (aux_funcs.py) ...")
+    logger.debug("! saliendo en función: 'TSF_Proyectada_a_Etapa'...")
     return DF_Salida
 
 
@@ -478,7 +480,7 @@ def Mantenimientos_a_etapas(DF_MantBar, DF_MantTx, DF_MantGen, DF_MantLoad, DF_E
                 etapa topológica, se ajusta el comienzo partiendo del entero anterior.
             4.- Se mide la distancia temporal entre 'FIni' (fecha inicial del mantenimiento) y la de término de la etapa topológica, de se menor a 1 día es considerado
                 no representativo y se comienza desde la siguiente etapa topológica.
-            5.- Análogamente para caso opuesto, se mide la distancia temporal entre 'FFin' (fecha final del mantenimiento) y la de inicio de la etapa topológica, de se menor
+            5.- Análogamente para caso opuesto, se mide la distancia temporal entre 'FFin' (fecha final del mantenimiento) y la de inicio de la etapa topológica, de ser menor
                 a 1 día es considerado no representativo y se comienza desde la etapa topológica anterior.
             6.- Para cada numero del rango anterior (etapas ya están ingresadas en orden), se agrega nueva fila al DF_Salida con los datos del mantenimiento.
         Retorna un diccionario con DataFrame de indices EtaNum, solo para aquellas filas que no sean completamente nulas.
@@ -566,7 +568,7 @@ def GenHistorica_a_Etapa(DF_Etapas, DF_histsolar, DF_histeolicas):
     ColumnasEolicas = [ "EólicaZ{}_{}".format(Num + 1, ParamNom) for Num in range(len(DF_histeolicas.columns)) for ParamNom in ['mean', 'std'] ]
     # Inicializa los pandas DataFrame de Salida
     DF_Salida_Solar = pd__DataFrame(columns=ColumnasSolar, index=DF_Etapas.index)
-    DF_Salida_Eolico = pd__DataFrame(columns=[ColumnasEolicas], index=DF_Etapas.index)
+    DF_Salida_Eolico = pd__DataFrame(columns=ColumnasEolicas, index=DF_Etapas.index)  # normal DF, not Multiindex (columns=[ColumnasEolicas])
     # Calcula el máximo anual para normalizar posteriormente
     for EtaNum, Etapa in DF_Etapas.iterrows():
         for DF_ERNC in [DF_histsolar, DF_histeolicas]:  # calcula para ambos DataFrame
@@ -642,8 +644,7 @@ def GenHistorica_a_Etapa(DF_Etapas, DF_histsolar, DF_histeolicas):
     return (DF_Salida_Solar, DF_Salida_Eolico)
 
 
-def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_TasaCReg = pd__DataFrame(),
-                      DF_DesvDec = pd__DataFrame(), DictTypoCargasEta = {}, seed=None):
+class IteratorDemand:  # AClass unique type
     """
         Genera un iterador de valor p.u. de las demandas en cada carga (Ésta
         debe ser multiplicada por el valor inicial nominal de la carga al
@@ -695,43 +696,62 @@ def GeneradorDemanda( StageIndexesList=[], DF_TasaCLib = pd__DataFrame(), DF_Tas
                 2.4.- Agrega arreglo al DataFrame de Salida.
                 2.5.- Retorna la tupla (EtaNum 1-indexed, pandas DataFrame)
     """
-    # Verifica que el largo de Etapas sean coincidentes, de lo contrario retorna ValueError
-    if DF_TasaCLib.shape[0] != DF_TasaCReg.shape[0] != DF_DesvDec.shape[0] != len(DictTypoCargasEta):
-        msg = "El numero de etapas en DF_TasaCLib, DF_TasaCReg y DF_DesvDec son diferentes del tamaño de DictTypoCargasEta."
-        logger.error(msg)
-        raise ValueError(msg)
 
-    for EtaNum in StageIndexesList:
-        DF_Salida = pd__DataFrame( index=DictTypoCargasEta[EtaNum].index,
-                                   columns=['PDem_pu'])
-        # Obtiene los indices de las cargas en la etapa actual que sean Clientes Libres
-        IndCLib = DictTypoCargasEta[EtaNum][ DictTypoCargasEta[EtaNum]['type'] == 'L' ].index
-        # Obtiene los indices de las cargas en la etapa actual que sean Clientes Regulados
-        IndCReg = DictTypoCargasEta[EtaNum][ DictTypoCargasEta[EtaNum]['type'] == 'R' ].index
+    def __init__(self, StageIndexesList=[], DF_TasaCLib=pd__DataFrame(), DF_TasaCReg=pd__DataFrame(),
+                 DF_DesvDec = pd__DataFrame(), DictTypoCargasEta = {}, seed=None):
+        # Verifica que el largo de Etapas sean coincidentes, de lo contrario retorna ValueError
+        if DF_TasaCLib.shape[0] != DF_TasaCReg.shape[0] != DF_DesvDec.shape[0] != len(DictTypoCargasEta):
+            msg = "Number of stages within 'DF_TasaCLib', 'DF_TasaCReg' and 'DF_DesvDec' are different from 'DictTypoCargasEta'."
+            logger.error(msg)
+            raise ValueError(msg)
+        self.DF_TasaCLib = DF_TasaCLib
+        self.DF_TasaCReg = DF_TasaCReg
+        self.DF_DesvDec = DF_DesvDec
+        self.DictTypoCargasEta = DictTypoCargasEta
+        self.seed = seed
+        self.CurrIndxStage = 0
+        self.TotalIndxStages = len(StageIndexesList)
+        self.StageIndexesList = StageIndexesList
 
-        # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
-        np__random__seed(seed)
+    def __iter__(self):
+        return self
 
-        #
-        # Utiliza crecimiento esperado (DF_TasaCLib | DF_TasaCReg) como valor promedio para cada cliente,
-        # sujeto a la desviación en la proyección en la proyección de demanda pasada (referida a esta etapa)
-        #
-        # Genera nueva tasa de los Clientes Libres.
-        dataCLib = np__random__normal( loc=float(DF_TasaCLib.loc[EtaNum, :]),
-                                       scale=float(DF_DesvDec.loc[EtaNum, :]),
-                                       size=len(IndCLib))
-        # Genera nueva tasa de los Clientes Regulados.
-        dataCReg = np__random__normal( loc=float(DF_TasaCReg.loc[EtaNum, :]),
-                                       scale=float(DF_DesvDec.loc[EtaNum, :]),
-                                       size=len(IndCReg))
-        # Asigna los datos Regulados y Libres al pandas DataFrame de salida
-        DF_Salida.loc[IndCLib, 'PDem_pu'] = dataCLib  # demanda en [p.u.] ya que salen de valores DECIMALES en la etapa
-        DF_Salida.loc[IndCReg, 'PDem_pu'] = dataCReg  # demanda en [p.u.] ya que salen de valores DECIMALES en la etapa
-        yield (EtaNum,  DF_Salida)
+    def __next__(self):
+        if self.CurrIndxStage < self.TotalIndxStages:
+            self.CurrentStage = self.StageIndexesList[self.CurrIndxStage]
+            DF_Salida = pd__DataFrame( index=self.DictTypoCargasEta[self.CurrentStage].index,
+                                       columns=['PDem_pu'])
+            # Obtiene los indices de las cargas en la etapa actual que sean Clientes Libres
+            IndCLib = self.DictTypoCargasEta[self.CurrentStage][ self.DictTypoCargasEta[self.CurrentStage]['type'] == 'L' ].index
+            # Obtiene los indices de las cargas en la etapa actual que sean Clientes Regulados
+            IndCReg = self.DictTypoCargasEta[self.CurrentStage][ self.DictTypoCargasEta[self.CurrentStage]['type'] == 'R' ].index
+
+            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
+            np__random__seed(self.seed)
+
+            #
+            # Utiliza crecimiento esperado (DF_TasaCLib | DF_TasaCReg) como valor promedio para cada cliente,
+            # sujeto a la desviación en la proyección en la proyección de demanda pasada (referida a esta etapa)
+            #
+            # Genera nueva tasa de los Clientes Libres.
+            dataCLib = np__random__normal( loc=float(self.DF_TasaCLib.loc[self.CurrentStage, :]),
+                                           scale=float(self.DF_DesvDec.loc[self.CurrentStage, :]),
+                                           size=len(IndCLib))
+            # Genera nueva tasa de los Clientes Regulados.
+            dataCReg = np__random__normal( loc=float(self.DF_TasaCReg.loc[self.CurrentStage, :]),
+                                           scale=float(self.DF_DesvDec.loc[self.CurrentStage, :]),
+                                           size=len(IndCReg))
+            # Asigna los datos Regulados y Libres al pandas DataFrame de salida
+            DF_Salida.loc[IndCLib, 'PDem_pu'] = dataCLib  # demanda en [p.u.] ya que salen de valores DECIMALES en la etapa
+            DF_Salida.loc[IndCReg, 'PDem_pu'] = dataCReg  # demanda en [p.u.] ya que salen de valores DECIMALES en la etapa
+            # jumps to next stage index (always will have one ahead, not to use extra temp variable for return)
+            self.CurrIndxStage += 1
+            return (self.CurrentStage,  DF_Salida)
+        else:
+            raise StopIteration
 
 
-def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC = None,
-                       DF_TSF = None, DF_PE_Hid = None, DesvEstDespCenEyS=1, DesvEstDespCenP=1, seed=None):
+class IteratorDespatch:
     """
         Genera un iterador de valores p.u. de las potencias de despacho en cada unidad de generación de las distintas tecnologías. Estos valores
         deben ser multiplicados por el valor nominal de potencia de generación de la unidad y limitados entre pmin y pmax). El iterador crea un
@@ -739,7 +759,7 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
 
         Notar que se debe obtener previamente el número de cargas en cada etapa. Los parámetros ingresados deben tener largo del número de etapas.
 
-        Dict_TiposGen  # Diccionario por etapa de lo tipos de generación en DataFrame (numero gen en Grid)
+        DF_GenType_per_unit  # Diccionario por etapa de lo tipos de generación en DataFrame (numero gen en Grid)
         DF_HistGenERNC  # tupla de dos pandas DataFrame (DF_Solar, DF_Eólico)
         Lista_TecGenSlack  # lista
         DF_TSF  # pandas DataFrame, para cada tecnología que recurra con falla se asigna
@@ -763,186 +783,120 @@ def GeneradorDespacho( StageIndexesList=[], Dict_TiposGen = {}, DF_HistGenERNC =
         :param seed: Sets the random number to be tha same always
         :type seed: int, None
     """
-    # Corrobora que el largo de los parámetros de entrada (teóricamente el Número de etapas), sea igual. De lo contrario retorna ValueError
-    if len(Dict_TiposGen) != DF_HistGenERNC[0].shape[0] != DF_HistGenERNC[1].shape[0] != DF_TSF.shape[0] != DF_PE_Hid.shape[0]:
-        msg = "El numero de etapa en los parámetros de entrada no coinciden."
-        logger.error(msg)
-        raise ValueError(msg)
 
-    # para cada siguiente iteración de la función generadora, retorna una tupla de (EtaNum, DF_Pot_despchada_indiceGrid)
-    for EtaNum in StageIndexesList:
-        # Número de generadores
-        # NGen = Dict_TiposGen[EtaNum].shape[0]
-        # Inicializa DataFrame (nueva columna vacía) para potencias despachadas
-        DF_IndGen_PDispatched = pd__concat([ Dict_TiposGen[EtaNum], pd__DataFrame(columns=['PGen_pu']) ], axis='columns')
+    def __init__(self, StageIndexesList=[], DF_GenType_per_unit = {}, DF_HistGenERNC = None,
+                 DF_TSF = None, DF_PE_Hid = None, DesvEstDespCenEyS=1, DesvEstDespCenP=1, seed=None):
+        # Corrobora que el largo de los parámetros de entrada (teóricamente el Número de etapas), sea igual. De lo contrario retorna ValueError
+        if len(DF_GenType_per_unit) != DF_HistGenERNC[0].shape[0] != DF_HistGenERNC[1].shape[0] != DF_TSF.shape[0] != DF_PE_Hid.shape[0]:
+            msg = "El numero de etapa en los parámetros de entrada no coinciden."
+            logger.error(msg)
+            raise ValueError(msg)
+        self.StageIndexesList = StageIndexesList
+        self.DF_GenType_per_unit = DF_GenType_per_unit
+        self.DF_HistGenERNC = DF_HistGenERNC
+        self.DF_TSF = DF_TSF
+        self.DF_PE_Hid = DF_PE_Hid
+        self.DesvEstDespCenEyS = DesvEstDespCenEyS
+        self.DesvEstDespCenP = DesvEstDespCenP
+        self.seed = seed
+        self.CurrIndxStage = 0
+        self.TotalIndxStages = len(StageIndexesList)
+        self.StageIndexesList = StageIndexesList
 
-        #
-        # NUMERO DE TIPOS DE CENTRALES
-        #
-        # Obtiene nombres de los tipos ERNC (solar [0] y eólico [1])
-        NombresERNCTipo = [GenTecNom[0] for RowNum, GenTecNom in Dict_TiposGen[EtaNum].iterrows() if ('EólicaZ' in GenTecNom[0]) | ('Solar' in GenTecNom[0])]
-        # Calcula los indice de centrales de Embalse en la Grilla
-        IndGenEmb = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Embalse' ].index.values
-        # Calcula los indice de centrales de Serie en la Grilla
-        IndGenSerie = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Serie' ].index.values
-        # Calcula los indice de centrales de Pasada en la Grilla
-        IndGenPasada = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Pasada'].index.values
-        # Calcula los indice de centrales de Carbón en la Grilla
-        IndGenTermoCarbon = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Carbón'].index.values
-        # Calcula los indice de centrales de Gas-Diésel en la Grilla
-        IndGenTermoGasDie = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Gas-Diésel'].index.values
-        # Calcula los indice de centrales de Otras en la Grilla
-        IndGenTermoOtras = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == 'Otras'].index.values
-        #
-        #
+    def __iter__(self):
+        return self
 
-        #
-        # Encuentra el valor de despacho, aplicado con TSF
-        #
-        # Por cada nombre ERNC se obtiene e valor aleatorio, según sus medias y desviaciones estándar
-        for NomERNC in NombresERNCTipo:
-            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
-            np__random__seed(seed)
+    def __next__(self):
+        """Para cada siguiente iteración del iterador, retorna una tupla de (self.CurrentStage, DF_Pot_despchada_indiceGrid)"""
+        if self.CurrIndxStage < self.TotalIndxStages:
+            # get current number of stage from self.StageIndexesList
+            self.CurrentStage = self.StageIndexesList[self.CurrIndxStage]
+            # get all types of generation present in current stage
+            Array_TiposGen = self.DF_GenType_per_unit[self.CurrentStage]['type'].unique()
+            # Inicializa DataFrame (nueva columna vacía) para potencias despachadas
+            DF_IndGen_PDispatched = pd__concat([ self.DF_GenType_per_unit[self.CurrentStage], pd__DataFrame(columns=['PGen_pu']) ], axis='columns')
 
-            if 'Solar' in NomERNC:
-                Power_pu = np__random__normal( loc=float(DF_HistGenERNC[0].loc[EtaNum, NomERNC + '_mean']),
-                                               scale=float(DF_HistGenERNC[0].loc[EtaNum, NomERNC + '_std']))
-                # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-                TasaFalla = DF_TSF[NomERNC][EtaNum]
-                # La Tasa controla la probabilidad de falla
-                Power_pu *= np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla])
-            elif 'EólicaZ' in NomERNC:
-                Power_pu = np__random__normal( loc=float(DF_HistGenERNC[1].loc[EtaNum, NomERNC + '_mean']),
-                                               scale=float(DF_HistGenERNC[1].loc[EtaNum, NomERNC + '_std']))
-                # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-                TasaFalla = DF_TSF[NomERNC][EtaNum]
-                # La Tasa controla la probabilidad de falla
-                Power_pu *= np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla])
-            else:
-                msg = "NomERNC no es 'Solar' ni 'Eólico' de zona alguna!"
-                logger.error(msg)
-                raise ValueError(msg)
+            #
+            # MODIFICATION OF GENERATION ACCORDING TO TYPES
+            #
 
-            # verifica que Power_pu sea positivo o cero, y limitado entre 0 y 1, inclusive
-            Power_pu = 1.0 if Power_pu > 1 else 0 if Power_pu < 0 else Power_pu
-            DF_IndGen_PDispatched.loc[DF_IndGen_PDispatched['type'] == NomERNC, 'PGen_pu'] = Power_pu
-        # Para las tecnologías hidráulicas asigna promedio según PE y desv según parámetros 'DesvEstDespCenEyS' y 'DesvEstDespCenP'
-        if len(IndGenEmb):  # EMBALSE
-            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
-            np__random__seed(seed)
+            # mean values for 'Embalse', 'Serie' and 'Pasada'
+            meanVal_E_S_P = 1 - self.DF_PE_Hid.loc[self.CurrentStage, self.DF_PE_Hid.columns[0]]
+            # base dictionary without ERNC names and values for current stage randomize
+            TypesParams = {
+                # 'GenType': (meandValue for PowerPU, std value for PowerPU)
+                'Embalse': (meanVal_E_S_P, self.DesvEstDespCenEyS),  # normal pdf per unit
+                'Serie': (meanVal_E_S_P, self.DesvEstDespCenEyS),  # normal pdf per unit
+                'Pasada': (meanVal_E_S_P, self.DesvEstDespCenP),  # normal pdf per unit
+                'Carbón': (0.0, 1.0),   # uniform pdf per unit
+                'Gas-Diésel': (0.0, 1.0),   # uniform pdf per unit
+                'Otras': (0.0, 1.0),    # uniform pdf per unit
+            }
 
-            # valor de pdf gaussiana/normal
-            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
-                                           scale=DesvEstDespCenEyS,
-                                           size=IndGenEmb.shape[0] )  # arrays
-            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Embalse'][EtaNum]
-            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
-            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenEmb.shape[0])
-            Power_pu *= ModifyPower_Array
-            # Corrige limitando valores mayores que 1 y menores que 0
-            Power_pu[ Power_pu < 0 ] = 0.0
-            Power_pu[ 1 < Power_pu ] = 1.0
-            # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenEmb, 'PGen_pu'] = Power_pu
+            # Finds the names given to ERNC groups to add them to TypesParams.
+            # Always single pdf value per groups. Calculate corresponding mean and std values.
+            ERNC_Solar_Names = dict()
+            ERNC_Wind_Names = dict()
+            for i in Array_TiposGen:
+                if 'Solar' in i:  # single value required
+                    meanVal = self.DF_HistGenERNC[0].at[self.CurrentStage, i + '_mean']
+                    stdVal = self.DF_HistGenERNC[0].at[self.CurrentStage, i + '_std']
+                    ERNC_Solar_Names[i] = (meanVal, stdVal)
+                elif 'EólicaZ' in i:  # multiple value required
+                    meanVal = self.DF_HistGenERNC[1].at[self.CurrentStage, i + '_mean']
+                    stdVal = self.DF_HistGenERNC[1].at[self.CurrentStage, i + '_std']
+                    ERNC_Wind_Names[i] = (meanVal, stdVal)
+                else:
+                    continue
+                # updates iteration base dictionary
+                TypesParams[i] = (meanVal, stdVal)
 
-        if len(IndGenSerie):  # SERIE
-            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
-            np__random__seed(seed)
+            # Para las tecnologías hidráulicas asigna promedio según PE y desv según parámetros 'DesvEstDespCenEyS' y 'DesvEstDespCenP'
+            for gen_type, (value1, value2) in TypesParams.items():
+                # Gets the generation indices on current stage
+                IndsGenType = DF_IndGen_PDispatched[ DF_IndGen_PDispatched['type'] == gen_type ].index.values
 
-            # valor de pdf gaussiana/normal
-            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
-                                           scale=DesvEstDespCenEyS,
-                                           size=IndGenSerie.shape[0] )  # arrays
-            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Serie'][EtaNum]
-            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
-            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenSerie.shape[0])
-            Power_pu *= ModifyPower_Array
-            # Corrige limitando valores mayores que 1 y menores que 0
-            Power_pu[ Power_pu < 0 ] = 0.0
-            Power_pu[ 1 < Power_pu ] = 1.0
-            # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenSerie, 'PGen_pu'] = Power_pu
+                # In case a self.seed is 'int', it's used to generate same numbers from self.seed.
+                # Otherwise makes it more random.
+                np__random__seed(self.seed)
+                if gen_type in ERNC_Solar_Names:  # dict names
+                    # valor de pdf gaussiana/normal
+                    Power_pu = np__random__normal( loc=value1, scale=value2 )  # single value to all (no clouds)
+                    # Get corresponding TSF (overwrites power to zero if considered out of service)
+                    TasaFalla = self.DF_TSF[gen_type][self.CurrentStage]
+                    # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
+                    np__random__seed(self.seed)
+                    Power_pu *= np__random__choice([0.0, 1.0], p=[TasaFalla, 1 - TasaFalla])
+                    # limits values to 0 and 1
+                    Power_pu = 1.0 if Power_pu > 1 else 0 if Power_pu < 0 else Power_pu
+                    # Asigna despacho al DataFrame de salida de etapa
+                    DF_IndGen_PDispatched.loc[IndsGenType, 'PGen_pu'] = Power_pu
+                    continue
+                elif gen_type in ['Embalse', 'Serie', 'Pasada'] + list(ERNC_Wind_Names.keys()):  # dict names
+                    # valor de pdf gaussiana/normal
+                    Power_pu = np__random__normal( loc=value1, scale=value2,
+                                                   size=IndsGenType.shape[0] )  # arrays
+                elif gen_type in ['Carbón', 'Gas-Diésel', 'Otras']:
+                    # valor de pdf uniforme
+                    Power_pu = np_random__uniform( low=value1, high=value2,
+                                                   size=IndsGenType.shape[0] )  # arrays
 
-        if len(IndGenPasada):    # PASADA
-            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
-            np__random__seed(seed)
+                # Get corresponding TSF (overwrites power to zero if considered out of service)
+                TasaFalla = self.DF_TSF[gen_type][self.CurrentStage]
+                # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
+                np__random__seed(self.seed)
+                Power_pu *= np__random__choice([0.0, 1.0], p=[TasaFalla, 1 - TasaFalla], size=IndsGenType.shape[0])
+                # Corrige limitando valores mayores que 1 y menores que 0
+                Power_pu[ Power_pu < 0.0 ] = 0.0  # minimum
+                Power_pu[ 1.0 < Power_pu ] = 1.0  # maximum
+                # Asigna despacho al DataFrame de salida de etapa
+                DF_IndGen_PDispatched.loc[IndsGenType, 'PGen_pu'] = Power_pu
 
-            # valor de pdf gaussiana/normal
-            Power_pu = np__random__normal( loc=1 - DF_PE_Hid.loc[EtaNum, DF_PE_Hid.columns[0]],
-                                           scale=DesvEstDespCenP,
-                                           size=IndGenPasada.shape[0] )  # arrays
-            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Pasada'][EtaNum]
-            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
-            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenPasada.shape[0])
-            Power_pu *= ModifyPower_Array
-            # Corrige limitando valores mayores que 1 y menores que 0
-            Power_pu[ Power_pu < 0 ] = 0.0
-            Power_pu[ 1 < Power_pu ] = 1.0
-            # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenPasada, 'PGen_pu'] = Power_pu
-
-        if len(IndGenTermoCarbon):    # CARBON
-            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
-            np__random__seed(seed)
-
-            # valor de pdf uniforme
-            Power_pu = np_random__uniform( low=0.0,
-                                           high=1.0,
-                                           size=IndGenTermoCarbon.shape[0] )  # arrays
-            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Carbón'][EtaNum]
-            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
-            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenTermoCarbon.shape[0])
-            Power_pu *= ModifyPower_Array
-            # Corrige limitando valores mayores que 1 y menores que 0
-            Power_pu[ Power_pu < 0 ] = 0.0
-            Power_pu[ 1 < Power_pu ] = 1.0
-            # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenTermoCarbon, 'PGen_pu'] = Power_pu
-
-        if len(IndGenTermoGasDie):    # GAS-DIÉSEL
-            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
-            np__random__seed(seed)
-
-            # valor de pdf uniforme
-            Power_pu = np_random__uniform( low=0.0,
-                                           high=1.0,
-                                           size=IndGenTermoGasDie.shape[0] )  # arrays
-            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Gas-Diésel'][EtaNum]
-            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
-            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenTermoGasDie.shape[0])
-            Power_pu *= ModifyPower_Array
-            # Corrige limitando valores mayores que 1 y menores que 0
-            Power_pu[ Power_pu < 0 ] = 0.0
-            Power_pu[ 1 < Power_pu ] = 1.0
-            # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenTermoGasDie, 'PGen_pu'] = Power_pu
-
-        if len(IndGenTermoOtras):    # OTRAS
-            # In case a seed is 'int', it's used to generate same numbers from seed. Otherwise makes it more random.
-            np__random__seed(seed)
-
-            # valor de pdf uniforme
-            Power_pu = np_random__uniform( low=0.0,
-                                           high=1.0,
-                                           size=IndGenTermoOtras.shape[0] )  # arrays
-            # Asigna directamente TSF asignada (deja potencia en cero si está en falla)
-            TasaFalla = DF_TSF['Otras'][EtaNum]
-            # multiplica las potencias despachadas para afectarlas por la tasa de falla. tasa controla la probabilidad de falla
-            ModifyPower_Array = np__random__choice([0, 1], p=[TasaFalla, 1 - TasaFalla], size=IndGenTermoOtras.shape[0])
-            Power_pu *= ModifyPower_Array
-            # Corrige limitando valores mayores que 1 y menores que 0
-            Power_pu[ Power_pu < 0 ] = 0.0
-            Power_pu[ 1 < Power_pu ] = 1.0
-            # Asigna despacho al DataFrame
-            DF_IndGen_PDispatched.loc[ IndGenTermoOtras, 'PGen_pu'] = Power_pu
-
-        yield (EtaNum, DF_IndGen_PDispatched)
-    pass
+            # jumps to next stage index (always will have one ahead, not to use extra temp variable for return)
+            self.CurrIndxStage += 1
+            return (self.CurrentStage, DF_IndGen_PDispatched)
+        else:
+            raise StopIteration
 
 
 def overloaded_trafo2w(Grid, max_load=100):

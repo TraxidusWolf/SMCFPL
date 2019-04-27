@@ -41,3 +41,13 @@ class GeneratorReferenceOverloaded(Exception):
 class GeneratorReferenceUnderloaded(Exception):
     """ Used to alert of Generator of reference should dispatch less power than possible. """
     pass
+
+
+class LoadFlowError(Exception):
+    """ Used to any possible load flow problem. """
+    pass
+
+
+class DemandGreaterThanInstalledCapacity(Exception):
+    """ Used to alert of installed capacity problems. """
+    pass
