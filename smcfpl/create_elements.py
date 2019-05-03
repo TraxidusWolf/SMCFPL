@@ -37,7 +37,8 @@ from multiprocessing import cpu_count as mu__cpu_count, Pool as mu__Pool
 import logging
 # define global loggers
 aux_funcs.setup_logger('stdout_only', level=logging.DEBUG)
-aux_funcs.setup_logger('Intra_congestion', r'IntraCongs.log')
+aux_funcs.setup_logger('Intra_congestion', log_file=r'IntraCongs.log',
+                       headers='LogInfo,StageNum,CaseNum,TypeElmnt,IndTable,loading_percent')
 
 # create local logger variable
 logger = logging.getLogger('stdout_only')
@@ -52,7 +53,7 @@ class Simulation(object):
         paralelismo se aumentarán los requerimientos de memoria según la cantidad de tareas.
     """
 
-    def __init__(self, XLSX_FileName='', InFilePath='.', OutFilePath='.', Sbase_MVA=100, MaxNumVecesSubRedes=1,
+    def __init__(self, simulation_name, XLSX_FileName='', InFilePath='.', OutFilePath='.', Sbase_MVA=100, MaxNumVecesSubRedes=1,
                  MaxItCongIntra=1, FechaComienzo='2018-01-01 00:00', FechaTermino='2019-01-31 23:59',
                  NumVecesDem=1, NumVecesGen=1, PerdCoseno=True, PEHidSeca=0.8, PEHidMed=0.5, PEHidHum=0.2,
                  DesvEstDespCenEyS=0.1, DesvEstDespCenP=0.2, NumParallelCPU=None, UsaSlurm=False,
@@ -74,6 +75,7 @@ class Simulation(object):
         STime = dt.now()
         #
         # Atributos desde entradas
+        self.simulation_name = simulation_name  # (str)
         self.XLSX_FileName = XLSX_FileName  # (str)
         self.InFilePath = InFilePath    # (str)
         self.Sbase_MVA = Sbase_MVA  # (float)
@@ -107,11 +109,11 @@ class Simulation(object):
         self.UsaSlurm = UsaSlurm  # (bool)
         self.UseTempFolder = UseTempFolder  # (bool)
         self.RemovePreTempData = RemovePreTempData  # (bool)
-        self.TempFolderName = TempFolderName
-        self.abs_path_temp = os__path__abspath(Working_dir + os__sep + TempFolderName)
+        self.TempFolderName = str(TempFolderName) + '_' + str(simulation_name)
+        self.abs_path_temp = os__path__abspath(Working_dir + os__sep + self.TempFolderName)
         self.abs_path_smcfpl = os__path__abspath(smcfpl_dir)
         self.abs_InFilePath = os__path__abspath(InFilePath)
-        self.abs_OutFilePath = os__path__abspath(OutFilePath)
+        self.abs_OutFilePath = os__path__abspath(OutFilePath + '_' + simulation_name)
         if isinstance(UseRandomSeed, int) | (UseRandomSeed is None):
             self.UseRandomSeed = UseRandomSeed
         else:
@@ -422,12 +424,6 @@ class Simulation(object):
                         CaseIdentifier = (HidNom, NDem, NGen)  # post-morten tag
 
                         if bool(self.NumParallelCPU):  # En paralelo
-                            # Results.append(
-                            #     Pool.apply_async(
-                            #         core_calc.vacio, (HidNom, NDem, NGen, instance_IterDem, instance_IterDispatched)
-                            #         )
-                            #     )
-
                             # Agrega la función con sus argumentos al Pool para ejecutarla en paralelo
                             Results.append( Pool.apply_async( core_calc.calc,
                                                               ( CountCasesDone, HidNom, self.BD_RedesXEtapa,
@@ -466,24 +462,23 @@ class Simulation(object):
                 # Obtiene los resultados del paralelismo, en caso de existir
                 for result in Results:
                     NumSuccededStages = result.get()
-                    # TotalSuccededStages += NumSuccededStages
+                    TotalSuccededStages += NumSuccededStages
 
-        print("NumSuccededStages:\n", NumSuccededStages)
-        # TotalStagesCases = self.NEta * CountCasesDone
+        TotalStagesCases = self.NEta * CountCasesDone
         RunTime = dt.now() - STime
         minutes, seconds = divmod(RunTime.seconds, 60)
         hours, minutes = divmod(minutes, 60)
         msg = "Finished successfully {}/{} stages ({:.2f}%) across {} cases of {} stages, "
         msg += "after {} [hr], {} [min] and {} [s]."
-        # msg = msg.format( TotalSuccededStages, TotalStagesCases,
-        #                   TotalSuccededStages / TotalStagesCases * 100,
-        #                   CountCasesDone - 1, self.NEta,
-        #                   hours, minutes, seconds + RunTime.microseconds * 1e-6)
-        # logger.info(msg)
+        msg = msg.format( TotalSuccededStages, TotalStagesCases,
+                          TotalSuccededStages / TotalStagesCases * 100,
+                          CountCasesDone - 1, self.NEta,
+                          hours, minutes, seconds + RunTime.microseconds * 1e-6)
+        logger.info(msg)
         logger.debug("Ran of method Simulation.run(...) finished!")
 
     def ManageTempData(self, FileFormat):
-        """ Manage the way to detect temp folder, in order to create temporarly files if requested or create them from scratch.
+        """ Manage the way to detect temp folder, in order to create temporarily files if requested or create them from scratch.
 
             Returns tuple of all databases required.
         """
@@ -493,7 +488,7 @@ class Simulation(object):
                     try:
                         # remove temp folder and all it's contents
                         shutil__rmtree(self.abs_path_temp)
-                        logger.warn("Eliminando directorio completo {}".format(self.TempFolderName))
+                        logger.warn("Deleting full directory {}".format(self.TempFolderName))
                     except Exception:
                         logger.warn("Directory '{}' doesn't exists... New one created.".format(self.TempFolderName))
                     # create temporarly folder
@@ -525,7 +520,7 @@ class Simulation(object):
                     BD_seriesconf.p
             If at least one is missing, returns false.
         """
-        Laux = []
+        FileExists = True
         Names2Look = ('BD_Etapas', 'BD_DemProy', 'BD_Hidrologias_futuras',
                       'BD_TSFProy', 'BD_MantEnEta', 'BD_RedesXEtapa',
                       'BD_ParamHidEmb', 'BD_HistGenRenovable', 'BD_seriesconf')
@@ -534,10 +529,13 @@ class Simulation(object):
         else:
             raise IOError("'{}' format not implemented yet or des not exists.". format(formatFile))
 
+        # checks for database files
         for filename in Names2Look:
             filename += '.{}'.format(postfix)
-            Laux.append( os__path__isfile(abs_path_folder + os__sep + filename) )
-        return all(Laux)
+            FileExists &= os__path__isfile(abs_path_folder + os__sep + filename)
+            if not FileExists:
+                break
+        return FileExists
 
     def import_DataBases_from_folder(self, abs_path_folder, formatFile='pickle'):
         """ Import all Database files in abs_path_folder:
@@ -1300,12 +1298,14 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
         logger.warning(msg)
 
     # 9.- Única unidad de referencia existente debe ser ingresada como Red Externa (Requerimientos de PandaPower)
-    pdSerie_GenRef = GenDisp[GenDisp['EsSlack']].squeeze()  # convert single row pandas DataFrame to Series
-    IndBarraConn = Grid['bus'][ Grid['bus']['name'] == pdSerie_GenRef['NomBarConn'] ].index[0]  # toma la primera coincidencia
-    pp__create_ext_grid( Grid, bus=IndBarraConn, vm_pu=1.0, va_degree=0.0, name=pdSerie_GenRef.name,
-                         max_p_kw=-pdSerie_GenRef['PmaxMW'] * 1e3, min_p_kw=-pdSerie_GenRef['PminMW'] * 1e3 )  # negativo para generación
-    # 10.- Elimina el generador de referencia del DataFrame de disponibles
-    GenDisp.drop(labels=pdSerie_GenRef.name, axis='index', inplace=True)
+    pdDF_GenRef = GenDisp[GenDisp['EsSlack']]
+    for gen_nom, row_pdser in pdDF_GenRef.iterrows():  # there should be only one iteration. Done for completeness
+        # gets the index bus number from connected bus (only one bus should exist)
+        IndBarraConn = Grid['bus'][ Grid['bus']['name'] == row_pdser['NomBarConn'] ].index[0]
+        pp__create_ext_grid( Grid, bus=IndBarraConn, vm_pu=1.0, va_degree=0.0, name=gen_nom,
+                             max_p_kw=-row_pdser['PmaxMW'] * 1e3, min_p_kw=-row_pdser['PminMW'] * 1e3 )  # negativo para generación
+        # 10.- Elimina el generador de referencia del DataFrame de disponibles para no ser reconocido como no referencia
+        GenDisp.drop(labels=gen_nom, axis='index', inplace=True)
 
     # 11.- Por cada Generador disponible crea el correspondiente elemento en la RED
     for GenNom, Generador in GenDisp.iterrows():
@@ -1331,9 +1331,9 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
 
     # 13.- Actualiza el diccionario ExtraData con información adicional
     # Costo variable unidad de referencia (Red Externa)
-    ExtraData['CVarGenRef'] = float(pdSerie_GenRef['CVar'])
+    ExtraData['CVarGenRef'] = pdDF_GenRef[['CVar']]  # DF
     # Nombre de la tecnología del generador de referencia
-    ExtraData['TecGenSlack'] = str(pdSerie_GenRef['GenTec'])
+    ExtraData['TecGenSlack'] = pdDF_GenRef[['GenTec']]  # DF
     # Número de cargas existentes por etapa
     ExtraData['NumLoads'] = Grid['load'].shape[0]
     # pandas DataFrame del índice de generadores en la Grilla y Tipo de tecnología

@@ -33,12 +33,12 @@ def print_full_df():
     pd__set_option('expand_frame_repr', False)
 
 
-def setup_logger(logger_name, log_file='.', level=logging.DEBUG):
+def setup_logger(logger_name, log_file=None, level=logging.DEBUG, headers=None):
     """ If log_file is declared (different than '.') log file is used.
     """
     logg = logging.getLogger(logger_name)
     formatter = logging.Formatter('[%(levelname)s][%(asctime)s][%(filename)s:%(funcName)s] - %(message)s')
-    if log_file != '.':
+    if log_file:
         fileHandler = logging.FileHandler(log_file, mode='w')
         fileHandler.setFormatter(formatter)
         logg.addHandler(fileHandler)
@@ -48,6 +48,9 @@ def setup_logger(logger_name, log_file='.', level=logging.DEBUG):
     logg.setLevel(level)
     logg.addHandler(streamHandler)
     logg.propagate = False  # avoid multiple logging messages
+
+    if headers:  # initialize first row of logger if headers were declared
+        logg.info(headers)
 
 
 def Crea_Etapas_desde_Cambio_Mant(DF_CambioFechas, ref_fija=True):

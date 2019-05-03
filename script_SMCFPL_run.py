@@ -7,13 +7,15 @@ import smcfpl
 import datetime as dt
 print( "smcfpl version: {}".format(smcfpl.__version__) )
 
-# XLSX_FileName = 'InputData_39Bus_v7.xlsx'  # note: for each maintanance row there is a Stage separation. Independent of duplicates.
-XLSX_FileName = 'InputData_SEN_v7.xlsx'  # note: for each maintanance row there is a Stage separation. Independent of duplicates.
+# note: for each maintanance row there is a Stage separation. Independent of duplicates.
+# XLSX_FileName = 'InputData_39Bus_v7.xlsx';  simulation_name = '39Bus_v7'
+XLSX_FileName = 'InputData_SEN_v7.xlsx';  simulation_name = 'SEN_v7'
 InFilePath = "./InputData"    # (str) Ruta relativa de Planilla xls|xlsx con hojas con nombre de los archivos de entrada.
 OutFilePath = "./OutputData"   # (str) Ruta relativa del Directorio que almacena las salidas. Debe existir previamente.
 
 # Crea el caso de estudio ingresando los parámetros de la simulación
 Sim = smcfpl.Simulation(
+    simulation_name=simulation_name,
     XLSX_FileName=XLSX_FileName,
     InFilePath = InFilePath,
     OutFilePath = OutFilePath,
@@ -39,8 +41,8 @@ Sim = smcfpl.Simulation(
     Working_dir = '.',
     UseTempFolder = True,  # create a folder called 'TempData' in 'Working_dir'.
     RemovePreTempData = False,  # only considered if UseTempFolder == True. Beware! 'TempData' directory will be completyle errased.
-    UseRandomSeed = 42_469,  # set randomness to predictable value (always same result) or None
     # UseRandomSeed = None,  # set randomness to predictable value (always same result) or None
+    UseRandomSeed = 42_469,  # set randomness to predictable value (always same result) or None
 )
 
 # Simulacion.run(delete_TempData=False)

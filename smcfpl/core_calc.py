@@ -38,11 +38,6 @@ logger = logging.getLogger('stdout_only')
 logger_IntraCong = logging.getLogger('Intra_congestion')
 
 
-def vacio(HidNom, NDem, NGen, iterador1, iterador2):
-    print("HidNom:", HidNom, "; NDem:", NDem, "; NGen:", NGen)
-    return [(i, j) for i, j in zip(iterador1, iterador2)]
-
-
 def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
          DF_seriesconf, DF_CVarReservoir_hid, MaxNumVecesSubRedes, MaxItCongIntra, abs_OutFilePath='',
          DemGenerator=iter(()), DispatchGenerator=iter(()), CaseID=('hid', 0, 0),
@@ -147,12 +142,13 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         except Exception as e:
             print("Something else happened during rundcpp() ...")
             print(e)
+            import pdb; pdb.set_trace()  # breakpoint 4c98318c //
             continue
         else:  # excecute when not exception
             msg = "LPF ran on Grid for stage {}/{} in case {}."
             msg = msg.format(StageNum, len(StageIndexesList), CaseNum)
             logger.debug(msg)
-        finally:  # excecute alter all cases (even exceptions)
+        finally:  # execute alter all cases (even exceptions)
             pass
 
         #
@@ -188,9 +184,10 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         ################################################################################
 
         #
-        # Identifica el índice del generador con mayor costo variable
-        MarginUnitIndx = find_marginal_unit(Grid, Dict_ExtraData)
-        print("MarginUnitIndx", MarginUnitIndx)
+        # Finds merit list for current grid increasingly ordered and the marginal unit from same list
+        marginal_unit, merit_list = find_merit_list(Grid, Dict_ExtraData)
+        print("merit_list:", merit_list)
+        print("marginal_unit", marginal_unit)
         #
         # Modifica loading_percent para identificar congestiones. Copy by reference.
         Adjust_transfo_power_limit_2_max_allowed(Grid, Dict_ExtraData)
@@ -272,14 +269,15 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         # Before finishing correctly, saves the relevant data.
         RelevantData[(StageNum, CaseNum)] = {
             'Grid': Grid,
-            'MarginUnitIndx': MarginUnitIndx,
+            'merit_list': merit_list,
+            'marginal_unit': marginal_unit,
             'ListaCongInter': ListaCongInter,
             'SubGrids': SubGrids,
             'TotalPowerCost': TotalPowerCost,
             'PLoss': PLoss,
         }
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        print("StageNum:", StageNum, "terminado exitosamente")
+        print("StageNum:", StageNum, "Finished successfully")
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         SuccededStages += 1
 
@@ -412,24 +410,43 @@ def check_limits_GenRef(Grid):
         raise LoadFlowError(msg)
 
 
-def find_marginal_unit(Grid, Dict_ExtraData):
+def find_merit_list(Grid, Dict_ExtraData):
     """
-        Identifica el índice del generador con mayor costo variable
-        Retorna índice de las tablas dataframe de la primera unidad con mayor costo variable.
+        Finds within the current Grid and the ExtraData an ordered list
+        of dispached (avaiable) units according to their costs in
+        increasing order. It requires previuos dispatched. Do not consider
+        (filters) unit with power 0, that might mean they are active with
+        no inyection, or they are in failure state.
+
+        Returns two DataFrames: The first is the marginal unit as a single row
+        pandas dataframe. The second element contains the merit list (last unit is marginal)
+        in increasing order.
+        Columns are:
+            - index within corresponding Grid (gen|ext_grid).
+            - variable cost of unit.
+            - boolean flag meaning if it correspond a a reference unit (ext_grid).
+
+        Steps: (Grid and ExtraData share same element indices)
+          1.- filters out every Grid['res_gen'] con p=0 and get indices.
+          2.- filters out every Grid['res_ext_grid'] con p=0 and get indices.
+          3.- filter from ExtraData all rows filtered for Grid (GenRef and GenNoRefs)
+
     """
-    IndMarginGen = Dict_ExtraData['CVarGenNoRef'].idxmax(axis='index')[0]  # primer GenNoRef
-    CVarMarginGen = Dict_ExtraData['CVarGenNoRef']['CVar'][IndMarginGen]
-    # Compara CVar de IndMarginGen con el de GenSlack
-    # MarginUnit: (tipo de elemento, indice en grilla, CVar)
-    # Look it for in the 'ext_grid' and 'gen' tables.
-    if Dict_ExtraData['CVarGenRef'] > CVarMarginGen:
-        MarginUnit = ('ext_grid', Grid['ext_grid'].index[0], Dict_ExtraData['CVarGenRef'])
-        # Notar que debido a que se asume único GenSlack, índice es siempre '0'.
-    elif Dict_ExtraData['CVarGenRef'] < CVarMarginGen:
-        MarginUnit = ('gen', IndMarginGen, CVarMarginGen)
-    else:  # cuando son iguales, se escoge una unidad (No Slack)
-        MarginUnit = ('gen', IndMarginGen, CVarMarginGen)
-    return MarginUnit
+    # 1.- filters out every Grid['res_gen'] con p=0 and get indices.
+    gen_no_ref_indxs = Grid['res_gen'][ Grid['res_gen']['p_kw'] == 0 ].index
+    # 2.- filters out every Grid['res_ext_grid'] con p=0 and get indices.
+    gen_ref_indxs = Grid['res_ext_grid'][ Grid['res_ext_grid']['p_kw'] == 0 ].index
+    # 3.- filter from ExtraData all rows filtered for Grid (GenRef and GenNoRefs)
+    cvar_no_ref = Dict_ExtraData['CVarGenNoRef'].loc[ gen_no_ref_indxs, : ]
+    cvar_ref = Dict_ExtraData['CVarGenRef'].loc[ gen_ref_indxs, : ]
+    # .- Adds new column to both DF for after identification of index (GenRef=True, GenNoRef=False)
+    cvar_no_ref = cvar_no_ref.assign(Genref=False)
+    cvar_ref = cvar_ref.assign(Genref=True)
+    # .- concatenates (index-wise) the dataframes for all columns and sort by 'CVar'. Increasing order.
+    cvar_df = pd__concat([cvar_ref, cvar_no_ref], axis='index').sort_values('CVar', ascending=True)
+    # .- Last row is the marginal unit
+    marginal_unit = cvar_df.tail(1)  # DF
+    return (marginal_unit, cvar_df)
 
 
 def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, in_node, StageNum, StageIndexesList, CaseNum):
@@ -451,9 +468,11 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, in
             if TypeElmnt == 'line':
                 ColNames4Type = ['Pmax_AB_MW', 'Pmax_BA_MW']
                 res_FlowFromNameCol = 'p_from_kw'
+                TypeElmnt_aux = TypeElmnt
             elif TypeElmnt == 'trafo':
                 ColNames4Type = ['Pmax_AB_MW', 'Pmax_BA_MW']
                 res_FlowFromNameCol = 'p_hv_kw'
+                TypeElmnt_aux = TypeElmnt + '2w'
             else:
                 msg = "Type element on IntraCongestion element is no 'line' nor 'trafo'."
                 logger.error(msg)
@@ -468,11 +487,11 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, in
                 else:
                     ColName4Type_flow = ColNames4Type[1]
                 if FirstTime:  # works as initialization if ListIndTable is not empty
-                    PrevCap = Dict_ExtraData['PmaxMW_' + TypeElmnt].reset_index().at[IndTable, ColName4Type_flow]
+                    PrevCap = Dict_ExtraData['PmaxMW_' + TypeElmnt_aux].reset_index().at[IndTable, ColName4Type_flow]
                     FirstTime = False
                     MinCapElmtType = (TypeElmnt, IndTable)
                 # Get the TypeElmnt and Index of lowest Tx capacity
-                ActualCap = Dict_ExtraData['PmaxMW_' + TypeElmnt].reset_index().at[IndTable, ColName4Type_flow]
+                ActualCap = Dict_ExtraData['PmaxMW_' + TypeElmnt_aux].reset_index().at[IndTable, ColName4Type_flow]
                 if ActualCap < PrevCap:  # overwrites every time it finds a smaller
                     MinCapElmtType = (TypeElmnt, IndTable)
                 else:  # updates previous capacity
@@ -513,7 +532,7 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, in
             # (This should now happend unless base Grid is someway wrong).
             continue
 
-        # Checks for results of redipatchr problems and values
+        # Checks for results of redispatch problems and values
 
         # calculates load flow
         pp__rundcpp(Grid)

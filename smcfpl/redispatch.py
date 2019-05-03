@@ -541,9 +541,16 @@ def power_over_congestion(Grid, TypeElmnt, BranchIndTable, max_load_percent, Inc
 
         Returns (OverloadP_kW, loading_percent)
     """
-    # FLUJO DE LINEA CAMBIA SIGNO. Absolute values requiered
+    if TypeElmnt == 'line':
+        ColName = 'p_from_kw'
+    elif TypeElmnt == 'trafo':
+        ColName = 'p_hv_kw'
+    else:
+        msg = "No TypeElmnt={} supported.".format(TypeElmnt)
+        raise ValueError(msg)
+    # FLUJO DE LINEA CAMBIA SIGNO. Absolute values required
     loading_percent = Grid['res_' + TypeElmnt].at[BranchIndTable, 'loading_percent']
-    FluPAB_kW = abs(Grid['res_' + TypeElmnt].at[BranchIndTable, 'p_from_kw'])  # da igual dirección (signo)
+    FluPAB_kW = abs(Grid['res_' + TypeElmnt].at[BranchIndTable, ColName])  # da igual dirección (signo)
     MaxFluP_kW = FluPAB_kW * max_load_percent / loading_percent  # >= 0
     OverloadP_kW = FluPAB_kW - MaxFluP_kW
     OverloadP_kW += MaxFluP_kW * IncreaseFlow  # increases OverloadP_kW by 1+IncreaseFlow, compensate fpl error
