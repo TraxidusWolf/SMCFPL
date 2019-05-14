@@ -481,6 +481,7 @@ class Simulation(object):
             logger.info("Solving cases in LOCAL MODE.")
             # Total number of stages across the cases that converged to something
             total_cases_succeded = 0
+            total_stages_succeded = 0
             # Initialize case executed number
             case_num_counter = 0
 
