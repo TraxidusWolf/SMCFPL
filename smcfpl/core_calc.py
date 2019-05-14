@@ -38,6 +38,118 @@ logger = logging.getLogger('stdout_only')
 logger_IntraCong = logging.getLogger('Intra_congestion')
 
 
+def in_node_manager(group_info, base_BD_names, gral_params):
+    """
+        this must run within a single node.
+        Take input from send_work.send() and use it
+        to run parallel case as much cores are available,
+        that is, run core_calc.calc() in parallel.
+    """
+    # get the group_info (tuple)
+    nth_group = group_info[0]
+    cases_per_group = group_info[1]
+    n_groups = group_info[2]
+    n_cases = group_info[3]
+    group_details = group_info[4]
+    # read BD files on head node
+    base_BDs = dict.fromkeys(base_BD_names, None)
+    for fname in base_BD_names:
+        with open(fname + '.p', 'rb') as f:
+            base_BDs[fname] = pickle.load(f)
+    ################################################
+    ################################################
+    ################################################
+    ################################################
+    ################################################
+    # get general databases from file to each variable (came form file)
+    StageIndexesList = base_BDs['BD_Etapas.p'].idex.tolist()
+    DF_TasaCLib = base_BDs['BD_DemProy.p'][ ['TasaCliLib'] ]
+    DF_TasaCReg = base_BDs['BD_DemProy.p'][ ['TasaCliReg'] ]
+    DF_DesvDec = base_BDs['BD_DemProy.p'][ ['Desv_decimal'] ]
+    DF_HistGenERNC = base_BDs['BD_HistGenRenovable.p']
+    DF_TSF = base_BDs['BD_TSFProy.p']
+    grillas = base_BDs['BD_RedesXEtapa.p']
+    # get some simulation parameters. Useful for every simulation. (came from self)
+    random_seed = gral_params[0]
+    DesvEstDespCenEyS = gral_params[1]
+    DesvEstDespCenP = gral_params[2]
+    DictTypoCargasEta = gral_params[3]
+    DF_GenType_per_unit = gral_params[4]
+    abs_OutFilePath = gral_params[5]
+    NumVecesDem = gral_params[6]
+    NumVecesGen = gral_params[7]
+    ################################################
+    ################################################
+    ################################################
+    ################################################
+    ################################################
+    # parallel parameters
+    n_cpu = min(mu__cpu_count(), cases_per_group)  # optimize core request
+    Pool = mu__Pool(n_cpu)
+    results = []
+    # cases processing
+    nth_case = (nth_group - 1) * cases_per_group + 1
+    D = G = 1
+    for case_hid, cases_per_hid in group_details.items():
+        # Note: if n_cases_per_hid == 0, this for loop is skipped
+        for sub_nth_case in range(cases_per_hid):
+            case_identifier = (case_hid, D, G)
+            # filter database dependent on hydrology
+            DF_PE_Hid = base_BDs['BD_Hydro'][HidNom]['DF_PEsXEtapa']
+            # Creates an iterator (class type with __next__ dunder) for each loop (different values)
+            instance_IterDem = aux_funcs.IteratorDemand(StageIndexesList=StageIndexesList,
+                                                        DF_TasaCLib=DF_TasaCLib,  # pandas DataFrame
+                                                        DF_TasaCReg=DF_TasaCReg,  # pandas DataFrame
+                                                        DF_DesvDec=DF_DesvDec,  # pandas DataFrame
+                                                        DictTypoCargasEta=DictTypoCargasEta,  # diccionario
+                                                        seed=random_seed)  # int, None
+            instance_IterDispatched = aux_funcs.IteratorDespatch(StageIndexesList=StageIndexesList,
+                                                                 DF_GenType_per_unit=DF_GenType_per_unit,  # dict of numpy array
+                                                                 DF_HistGenERNC=DF_HistGenERNC,  # tupla de dos pandas DataFrame
+                                                                 DF_TSF=DF_TSF,  # para cada tecnología que recurra con falla se asigna
+                                                                 DF_PE_Hid=DF_PE_Hid,  # pandas DataFrame
+                                                                 DesvEstDespCenEyS=DesvEstDespCenEyS,  # float
+                                                                 DesvEstDespCenP=DesvEstDespCenP,  # float
+                                                                 seed=random_seed)  # int, None
+
+            results.append(
+                Pool.apply_async(
+                    calc,
+                    (
+                        nth_case, case_hid, grillas, StageIndexesList, DF_ParamHidEmb_hid,
+                        DF_seriesconf, DF_CVarReservoir_hid, MaxNumVecesSubRedes, MaxItCongIntra,
+                        # n_cases,
+                        # nth_group,
+                        # n_groups,
+                    ),
+                    {
+                        'abs_OutFilePath': abs_OutFilePath,
+                        'DemGenerator': instance_IterDem,
+                        'DispatchGenerator': instance_IterDispatched,
+                        'CaseID': case_identifier,
+                        'in_node': True,
+                    }
+                )
+            )
+            # print("In manage: nth_case:", nth_case, " case_hid:", case_hid, " n_cases_per_hid:", n_cases_per_hid)
+            nth_case += 1
+            if G < NumVecesGen:
+                G = G + 1
+            else:
+                if D < NumVecesDem:
+                    D = D + 1
+
+    # fetch parallel status info
+    for result in results:
+        res = result.get()
+        msg = res[2]
+        print(msg)
+    msg = "Finished manage() for group {}/{}.".format(nth_group, n_groups)
+    logger.info(msg)
+
+    return
+
+
 def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
          DF_seriesconf, DF_CVarReservoir_hid, MaxNumVecesSubRedes, MaxItCongIntra, abs_OutFilePath='',
          DemGenerator=iter(()), DispatchGenerator=iter(()), CaseID=('hid', 0, 0),
@@ -87,29 +199,9 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
     # for each stage in the case
     for (StageNum, DF_Dem), (StageNum, DF_Gen) in zip(DemGenerator, DispatchGenerator):
         print("StageNum:", StageNum, "CaseNum:", CaseNum)
-        if in_node:
-            # Load Data from every stage when 'in_node' is True
-            """Carga la grilla con los valores actualizados"""
-            Grid = Grillas[StageNum]
-            # # load Grid writen for the Power System
-            # FileName = "Grid_Eta{}.p".format(StageNum)
-            # # Grid = pp__from_pickle(FileName)
-            # print("FileName:", FileName)
-            # # lee grilla correspondiente
-            # Grid = pp__from_pickle(File_Caso + os__sep + FileName)
-            # print("Grid['load']['name']:", Grid['load']['name'])
-
-            # # load ExtraData writen for the Power System
-            # FileName = "{}.json".format(StageNum)
-            # # Dict_ExtraData = json__load(FileName)
-            # print("FileName:", FileName)
-            # # lee archivo correspondiente
-            # # with open(+FileName, 'r') as f:
-        else:
-            # Carga la grilla y extradata con valores actualizados
-            Grid, Dict_ExtraData = UpdateGridPowers( Grillas, StageNum,
-                                                     DF_Dem,
-                                                     DF_Gen)
+        # Load Data from every stage when 'in_node' is True
+        Grid, Dict_ExtraData = UpdateGridPowers( Grillas, StageNum,
+                                                 DF_Dem, DF_Gen)
 
         #
         # Verifica que el balance de potencia es posible en la etapa del caso (Gen-Dem)

@@ -62,8 +62,8 @@ class Simulation(object):
         """
             :param UsaSlurm: Diccionario con parámetros para ejecución en el sistema de colas de slurm. Hace que se ejecuten comandos (con biblioteca subprocess) sbatch
                             propios de slurm para ejecución en varios nodos. Se escriben BD datos en un directorio temporal para ser copiado a cada nodo.
-                            Formato: {'NumNodos': (int), 'NodeWaittingTime': (datetime deltatime object), 'ntasks': (int), 'cpu_per_tasks': (int)}
-                                    'NumNodos': Número de nodos a utilizar en el cluster.
+                            Formato: {'NumNodes': (int), 'NodeWaittingTime': (datetime deltatime object), 'ntasks': (int), 'cpu_per_tasks': (int)}
+                                    'NumNodes': Número de nodos a utilizar en el cluster.
                                     'NodeWaittingTime': Tiempo de espera máximo de ejecución de los procesos enviados a nodos.
                                     'ntasks': número de tareas a repartirse por nodo.
                                     'cpu-per-tasks': Número de cpu requeridas para cada tarea.
@@ -99,6 +99,7 @@ class Simulation(object):
         self.NumCasesExpected = NumVecesDem * NumVecesGen * len(self.ListaHidrologias)
         self.DesvEstDespCenEyS = DesvEstDespCenEyS  # 0 <= (float) <= 1
         self.DesvEstDespCenP = DesvEstDespCenP  # 0 <= (float) <= 1
+        self.Working_dir = Working_dir
         if isinstance(NumParallelCPU, int) | (NumParallelCPU is None) | (NumParallelCPU == 'Max'):
             self.NumParallelCPU = NumParallelCPU
         else:
@@ -106,6 +107,45 @@ class Simulation(object):
             msg = "Input 'NumParallelCPU' must be integer, False, or 'Max'."
             logger.error(msg)
             raise IOError(msg)
+        # checks for integrity of dictionary keys
+        if UsaSlurm:  # not False nor None
+            if not isinstance(UsaSlurm, dict):
+                msg = "UsaSlurm argument must be 'None' or populated dictionary."
+                logger.error(msg)
+                raise IOError(msg)
+            else:  # it's a dictionary, check for the keys!
+                #  {'var name': {'types possibility': 'str true condition to format' }}
+                required_keys = {
+                    'NumNodes': {int: '{}>0', str: "'{}'=='Max'", type(None): '{} is None'},
+                    'NodeWaittingTime': {dt__timedelta: 'True'},  # any timedelta value
+                    'ntasks': {int: '{}>0'},
+                    'cpu_per_tasks': {int: '{}>0'},
+                }
+                for k, sk in required_keys.items():
+                    # stores or condition for type
+                    is_any_type = False
+                    # checks for existence of all keys
+                    if k not in UsaSlurm:
+                        msg = "Input argument UsaSlurm (dict) missing key: '{}'.".format(k)
+                        logger.error(msg); raise IOError(msg)
+                    # checks for key type and true value conditions
+                    for t, cond in sk.items():
+                        # checks for type
+                        if isinstance(UsaSlurm[k], t):
+                            is_any_type = True
+                            # checks for allowed values
+                            evaluate = cond.format(UsaSlurm[k])
+                            if not eval(evaluate):  # should evaluate to boolean condition
+                                varname = "UsaSlurm['{}']".format(k)
+                                fullcond = cond.format(varname)
+                                msg = "Input {} value must fulfill condition: {}".format(varname, fullcond)
+                                logger.error(msg); raise IOError(msg)
+                        else:
+                            # stores message if variable types do not match
+                            msg = "UsaSlurm['{}'] type must be: '{}'.".format(k, t)
+                    # after all types checks, if non is matched lunch error
+                    if not is_any_type:
+                        logger.error(msg); raise IOError(msg)
         self.UsaSlurm = UsaSlurm  # (bool)
         self.UseTempFolder = UseTempFolder  # (bool)
         self.RemovePreTempData = RemovePreTempData  # (bool)
@@ -160,6 +200,8 @@ class Simulation(object):
         #
         # Numero total de etapas
         self.NEta = self.BD_Etapas.shape[0]
+        # Number os spected stages (across cases)
+        self.total_stages_per_cases = self.NEta * self.NumCasesExpected
 
         # Gets a set of all generator's name (including ext_grid) available across stages (to set curve cost)
         self.AllGenNames = set()
@@ -194,9 +236,9 @@ class Simulation(object):
         #                                                          DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
         #                                                          DF_TasaCReg=self.BD_DemProy[['TasaCliReg']],  # pandas DataFrame
         #                                                          DF_DesvDec=self.BD_DemProy[['Desv_decimal']],  # pandas DataFrame
-        #                                                          DictTypoCargasEta=self.DictTypoCargasEta,  # diccionario
+        #                                                          DictTypoCargasEta=self.DictTypoCargasEta,  # dictionary
         #                                                          seed=self.UseRandomSeed)  # int, None
-        # Creates a hidrology databases and saves it in:
+        # Creates a hydrology databases and saves it in:
         #    BD_Hydro = {HidNom: { 'DF_PEsXEtapa': DF_PEsXEtapa,
         #                          'DF_ParamHidEmb_hid': DF_ParamHidEmb_hid,
         #                          'DF_CotasEmbalsesXEtapa': DF_CotasEmbalsesXEtapa,
@@ -245,8 +287,6 @@ class Simulation(object):
         # dont forget about BD_Hydro
         if self.UseTempFolder and not os__path__isfile(self.abs_path_temp + os__sep + 'BD_Hydro.p'):
             # checks for hydro database
-            # with open('BD_Hydro', 'wb') as f:
-            #     pickle__dump(self.BD_Hydro, f)
             smcfpl__in_out_proc__dump_BDs_to_pickle( {'BD_Hydro': self.BD_Hydro},
                                                      pathto=self.abs_path_temp,
                                                      FileFormat='pickle')
@@ -262,7 +302,7 @@ class Simulation(object):
         RunTime = dt.now() - STime
         minutes, seconds = divmod(RunTime.seconds, 60)
         hours, minutes = divmod(minutes, 60)
-        msg = "Inicialization of Simulation class finished after {} [hr], {} [min] and {} [s].".format(
+        msg = "Initialization of Simulation class finished after {} [hr], {} [min] and {} [s].".format(
             hours, minutes, seconds + RunTime.microseconds * 1e-6)
         logger.info(msg)
         logger.debug("! Initialization class Simulation(...) Finished!")
@@ -283,85 +323,143 @@ class Simulation(object):
                     ##   ### ##     ## ##     ## ##          ##     ## ##     ## ##     ## ##
                     ##    ##  #######  ########  ########    ##     ##  #######  ########  ########
 
-                # En caso de declarar uso de Slurm, se trabaja con archivos en lugar de mantener la base de datos
-                general en memoria RAM, incluyendo todo lo necesario (Reduce velocidad). Estos archivos son
-                necesario para ser copiado a los nodos. Escribe en un directorio de trabajo temporal (desde
-                de donde se ejecutó el script).
+                If UsaSlurm['NumNodes'] is bigger than nodes, it will wait unit cluster has those nodes.
+                Variable UsaSlurm['NumNodes'] also defines the number of parallel jobs in head node to send
+                cases accordingly to node number.
 
-                # Posibilidad de paralelismo mediante nodos en una configuración de un 'High-Performance Computer'
-                con configuración beowulf y administrador de colas slurm.
+                Per each group (in 'hydro_dict_cases_list'), function 'send_work()' is executed. This creates and
+                executes a bash script to run a certain amount of cases in one one. The same functions run
+                the cases IN PARALLEL within each node requested.
 
-                # Envía en paralelo múltiples grupos de casos (todas etapas bajo mismas condiciones de operación)
-                según nodos se hubieran solicitado. Las potencias de grillas son alteradas con la probabilidad
-                correspondiente justo antes de ser escritas.
+                Data files must be read from TempData* folder.
 
                 # Everything should be fine if NumNodes approx NumCPU head node.
             """
-            #
-            ### DEL TOTAL DE CASOS DIVIDIR SEGÚN CANTIDAD DE NODOS SOLICITADOS (24 nucleos y 25 nodos)
-            # Calcula casos por nodo. Divide casos entre total de nodos pedidos
-            NTrbjsXNodo = int(np__ceil(self.NumCasesExpected / self.UsaSlurm['NumNodos']))  # Número de casos por nodo
-            # Calcula Número de casos restantes (NTrabajo % NNodos; resto, integer)
-            NTrbjsRest = NTrbjsXNodo - self.NumCasesExpected % self.UsaSlurm['NumNodos']  # Número de casos último nodo
-            # creates a list for number of jobs on each node
-            ListaNumTrbjs = [NTrbjsXNodo] * (self.UsaSlurm['NumNodos'] - 1) + [NTrbjsRest]
+            # base database files
+            BD_fnames = [
+                'BD_DemProy.p', 'BD_Etapas.p', 'BD_Hidrologias_futuras.p',
+                'BD_HistGenRenovable.p', 'BD_Hydro.p', 'BD_MantEnEta.p',
+                'BD_ParamHidEmb.p', 'BD_RedesXEtapa.p', 'BD_seriesconf.p',
+                'BD_TSFProy.p']
+            # Total number of stages across the cases that converged to something
+            total_cases_sent = 0
+            total_cases_succeded = 0
+            total_stages_succeded = 0
 
-            #
-            # ENVÍA A LOS NODOS EL COMANDO DE CALCULO PARA USARSE CON LA DATA ESCRITA
-            msg = "Dividing {} cases into groups of {} across {} nodes.".format( self.NumCasesExpected,
-                                                                                 ListaNumTrbjs,
-                                                                                 self.UsaSlurm['NumNodos'])
+            # each position:
+            #    0-random_seed
+            #    1-DesvEstDespCenEyS
+            #    2-DesvEstDespCenP
+            #    3-DictTypoCargasEta
+            #    4-DF_GenType_per_unit
+            #    5-abs_OutFilePath
+            #    6-NumVecesDem
+            #    7-NumVecesGen
+            gral_params = [
+                self.UseRandomSeed,
+                self.DesvEstDespCenEyS,
+                self.DesvEstDespCenP,
+                self.DictTypoCargasEta,
+                self.DF_GenType_per_unit,
+                self.abs_OutFilePath,
+                self.NumVecesDem,
+                self.NumVecesGen,
+            ]
+
+            # find the number of available nodes ('idle' status)
+            max_av_nodes = find_maximum_nodes_available()
+
+            # Interpreters the number of nodes to use
+            nodes_to_use = aux_funcs.configure_input_nodes(self.UsaSlurm['NumNodes'], max_av_nodes)
+
+            if nodes_to_use > self.NumCasesExpected:
+                # Necessary, otherwise nodes will have no work to do.
+                nodes_to_use = self.NumCasesExpected
+                msg = "Nodes number > number of cases. Forcing use to {} nodes.".format(nodes_to_use)
+                logger.warn(msg)
+
+            # when no nodes are available raise error
+            if nodes_to_use == 0:
+                msg = "No nodes available at the time. Please try later."
+                logger.error(msg); raise NoNodesAvailable(msg)
+
+            # (Logging only) Split cases as groups into nodes as most equal ratio possibly (across 25 nodes; 24 core each)
+            cases_per_groups = aux_funcs.calc_sending_to_nodes_matrix( self.NumCasesExpected,
+                                                                       nodes_to_use,
+                                                                       self.ListaHidrologias)
+            cases_per_groups = cases_per_groups.sum(axis=0).astype(int).tolist()  # sum cols
+            list_interpreted_msg = aux_funcs.interprete_list_of_groups(cases_per_groups)
+            msg = "Dividing {} cases into {}, across {} nodes...".format( self.NumCasesExpected,
+                                                                          list_interpreted_msg,
+                                                                          nodes_to_use)
             logger.info(msg)
 
-            # Total number of stages across the cases that converged to something
-            TotalSuccededStages = TotalCasesSent = 0
+            # Truly divides the cases according to hydrologies. Get a list of dicts
+            hydro_dict_cases_list = aux_funcs.split_num_into_hydrologies( self.NumCasesExpected,
+                                                                          nodes_to_use,
+                                                                          self.ListaHidrologias)
 
-            # llama Envía grupos de trabajos/casos a los nodos
-            logger.info("calling funtion to send to nodes...")
+            n_groups = len(cases_per_groups)  # == len(hydro_dict_cases_list)
+            w_time = self.UsaSlurm['NodeWaittingTime']  # timeout for node response
 
-            # Ajuste parámetros de paralelismo para escribir archivos
-            if self.UsaSlurm['NumNodos']:
-                msg = "Parallel mode activated. Using maximum of {} simultaneous processes."
-                if isinstance(self.UsaSlurm['NumNodos'], int):
-                    Ncpu = self.UsaSlurm['NumNodos']
-                elif self.UsaSlurm['NumNodos'] == 'Max':
+            # Parallel parameters
+            if self.UsaSlurm['NumNodes']:
+                msg = "Cases will be sent in parallel. Using {} groups of cases according to NumNodes."
+                if isinstance(self.UsaSlurm['NumNodes'], int):
+                    Ncpu = nodes_to_use
+                elif self.UsaSlurm['NumNodes'] == 'Max':
                     Ncpu = mu__cpu_count()
                 logger.info( msg.format(Ncpu) )
                 Pool = mu__Pool(Ncpu)
-                Results = []
+                results = []
 
-            for NumTrbjs in ListaNumTrbjs:
-                if bool(self.UsaSlurm['NumNodos']):  # En paralelo
-                    Results.append( Pool.apply_async(send_work,
-                                                     (),
-                                                     {})
-                                    )
+            # group processing
+            iterable = enumerate(zip(cases_per_groups, hydro_dict_cases_list), start=1)
+            for nth_group, (cases_per_group, group_details) in iterable:
+                total_cases_sent += cases_per_group
+                # prepares input data for case classifier on sending. Compress data as single argument to function
+                group_info = (
+                    nth_group,
+                    cases_per_group,
+                    n_groups,
+                    n_cases,
+                    group_details)
+
+                if self.UsaSlurm['NumNodes']:  # In parallel
+                    results.append( Pool.apply_async(
+                        send_work,
+                        (
+                            self,
+                            group_info,
+                            BD_fnames,
+                            gral_params,
+                            w_time,
+                        )
+                    )
+                    )
                 else:
-                    NumSuccededStages = send_work( self.Base_PyGeneratorDemand, self.BD_BaseGenDisp,
-                                                   self.abs_InFilePath, self.abs_path_temp,
-                                                   self.abs_OutFilePath, TotalCasesSent)
-                    TotalSuccededStages += NumSuccededStages
-                TotalCasesSent += NumTrbjs
+                    n_cases_succeded, n_stages_succeded = send_work(
+                        self,
+                        group_info,
+                        BD_fnames,
+                        gral_params,
+                        w_time,
+                    )
+                    total_cases_succeded += n_cases_succeded
+                    total_stages_succeded += n_stages_succeded
 
-            if self.UsaSlurm['NumNodos']:  # En paralelo
-                print("Executing paralelism calculations on power systems...")
-                # Obtiene los resultados del paralelismo, en caso de existir
-                for result in Results:
-                    NumSuccededStages = result.get()
-                    TotalSuccededStages += NumSuccededStages
+            if self.UsaSlurm['NumNodes']:  # En paralelo
+                # Get results from parallelism , if it exists
+                for result in results:
+                    # n_cases_succeded, n_stages_succeded, n_group = result.get()
+                    n_cases_succeded = 0
+                    n_stages_succeded = 0
+                    result.get()
+                    total_cases_succeded += n_cases_succeded
+                    total_stages_succeded += n_stages_succeded
 
-            TotalStagesCases = self.NEta * self.NumCasesExpected
-            RunTime = dt.now() - STime
-            minutes, seconds = divmod(RunTime.seconds, 60)
-            hours, minutes = divmod(minutes, 60)
-            msg = "Finished successfully {}/{} stages ({:.2f}%) across {} cases of {} stages, "
-            msg += "after {} [hr], {} [min] and {} [s]."
-            msg = msg.format( TotalSuccededStages, TotalStagesCases,
-                              TotalSuccededStages / TotalStagesCases * 100,
-                              CountCasesDone - 1, self.NEta,
-                              hours, minutes, seconds + RunTime.microseconds * 1e-6)
-            logger.info(msg)
-            logger.debug("Ran of method Simulation.run(...) finished!")
+            # change variable name for logging proposes
+            case_num_counter = total_cases_succeded
 
         else:
             """
@@ -382,7 +480,9 @@ class Simulation(object):
             """
             logger.info("Solving cases in LOCAL MODE.")
             # Total number of stages across the cases that converged to something
-            TotalSuccededStages = 0
+            total_cases_succeded = 0
+            # Initialize case executed number
+            case_num_counter = 0
 
             # Ajuste parámetros de paralelismo para escribir archivos
             if self.NumParallelCPU:
@@ -395,12 +495,11 @@ class Simulation(object):
                 Pool = mu__Pool(Ncpu)
                 Results = []
 
-            # Inicialize case executed counter
-            CountCasesDone = 1
             # Start case generation
             for HidNom in self.ListaHidrologias:
                 for NDem in range(1, self.NumVecesDem + 1):
                     for NGen in range(1, self.NumVecesGen + 1):
+                        case_num_counter += 1
                         # get relevant values form hydrology
                         # DF_CotasEmbalsesXEtapa = self.BD_Hydro[HidNom]['DF_CotasEmbalsesXEtapa']
                         # DF_CostoCentrales = self.BD_Hydro[HidNom]['DF_CostoCentrales']
@@ -421,12 +520,12 @@ class Simulation(object):
                                                                              DesvEstDespCenP=self.DesvEstDespCenP,  # float
                                                                              seed=self.UseRandomSeed)  # int, None
                         # permite generar nombre del sub-directorio '{HidNom}_D{NDem}_G{NGen}'
-                        CaseIdentifier = (HidNom, NDem, NGen)  # post-morten tag
+                        case_identifier = (HidNom, NDem, NGen)  # post-morten tag
 
                         if bool(self.NumParallelCPU):  # En paralelo
                             # Agrega la función con sus argumentos al Pool para ejecutarla en paralelo
                             Results.append( Pool.apply_async( core_calc.calc,
-                                                              ( CountCasesDone, HidNom, self.BD_RedesXEtapa,
+                                                              ( case_num_counter, HidNom, self.BD_RedesXEtapa,
                                                                 self.BD_Etapas.index,
                                                                 self.BD_Hydro[HidNom]['DF_ParamHidEmb_hid'],
                                                                 self.BD_seriesconf,
@@ -437,13 +536,13 @@ class Simulation(object):
                                                               { 'abs_OutFilePath': self.abs_OutFilePath,
                                                                 'DemGenerator': instance_IterDem,
                                                                 'DispatchGenerator': instance_IterDispatched,
-                                                                'in_node': False, 'CaseID': CaseIdentifier,
+                                                                'in_node': False, 'CaseID': case_identifier,
                                                                 }
                                                               )
                                             )
                         else:
                             # (En serie) Aplica directamente para cada caso
-                            NumSuccededStages = core_calc.calc( CountCasesDone, HidNom, self.BD_RedesXEtapa,
+                            NumSuccededStages = core_calc.calc( case_num_counter, HidNom, self.BD_RedesXEtapa,
                                                                 self.BD_Etapas.index,
                                                                 self.BD_Hydro[HidNom]['DF_ParamHidEmb_hid'],
                                                                 self.BD_seriesconf,
@@ -452,27 +551,28 @@ class Simulation(object):
                                                                 abs_OutFilePath= self.abs_OutFilePath,
                                                                 DemGenerator=instance_IterDem,
                                                                 DispatchGenerator=instance_IterDispatched,
-                                                                in_node=False, CaseID=CaseIdentifier,
+                                                                in_node=False, CaseID=case_identifier,
                                                                 )
-                            TotalSuccededStages += NumSuccededStages
-                        CountCasesDone += 1
+                            total_stages_succeded += NumSuccededStages
 
             if self.NumParallelCPU:  # En paralelo
                 logger.info("Executing paralelism calculations on power system cases...")
                 # Obtiene los resultados del paralelismo, en caso de existir
                 for result in Results:
                     NumSuccededStages = result.get()
-                    TotalSuccededStages += NumSuccededStages
+                    total_cases_succeded += NumSuccededStages
 
-        TotalStagesCases = self.NEta * CountCasesDone
+        #
+        # FINISHING STEP AFTER ALL WORK
+        #
         RunTime = dt.now() - STime
         minutes, seconds = divmod(RunTime.seconds, 60)
         hours, minutes = divmod(minutes, 60)
-        msg = "Finished successfully {}/{} stages ({:.2f}%) across {} cases of {} stages, "
+        msg = "Finished successfully {}/{} stages ({:.2f}%) across {} cases with {} stages each, "
         msg += "after {} [hr], {} [min] and {} [s]."
-        msg = msg.format( TotalSuccededStages, TotalStagesCases,
-                          TotalSuccededStages / TotalStagesCases * 100,
-                          CountCasesDone - 1, self.NEta,
+        msg = msg.format( total_stages_succeded, self.total_stages_per_cases,
+                          total_stages_succeded / self.total_stages_per_cases * 100,
+                          case_num_counter, self.NEta,
                           hours, minutes, seconds + RunTime.microseconds * 1e-6)
         logger.info(msg)
         logger.debug("Ran of method Simulation.run(...) finished!")
@@ -1379,3 +1479,33 @@ def calc_reservoir_costs_from_cota(DF_CotasEmbalsesXEtapa, DF_ParamHidEmb_hid, C
         logger.error(msg)
         raise ValueError(msg)
     return DF
+
+
+def find_maximum_nodes_available():
+    """
+        Uses predefined bash command to find the number of nodes
+        available in the cluster, if 'sinfo' is found.
+    """
+    sinfo_cmd = "sinfo -N | grep idle | wc -l"  # slurm must be installed
+    res_cmd = sp__run([sinfo_cmd], shell=True, stdout=sp__PIPE, stderr=sp__PIPE)
+    # convert to string the outputs. If empty use empty string.
+    res_cmd_stdout = res_cmd.stdout.decode() if res_cmd.stdout else ''   # str
+    res_cmd_stderr = res_cmd.stderr.decode() if res_cmd.stderr else ''  # str
+    if 'sinfo: not found' in res_cmd_stderr:
+        msg = "sinfo binary (slurm) not found."
+        logger.error(msg); raise sinfoNotAvailable(msg)
+    elif not res_cmd_stderr:  # no errors found in bash prompt
+        try:
+            max_av_nodes = int(res_cmd_stdout)
+        except ValueError:
+            msg = "Result from sinfo filtered were not an integer."
+            logger.error(msg); raise SlurmCallError(msg)
+        except Exception:
+            msg = "Could not convert stdout results from batch command to integer."
+            msg += "Command results: {}".format(res_cmd_stdout)
+            logger.error(msg); raise SlurmCallError(msg)
+    else:  # Other errors appeared when looking for available nodes
+        msg = "something else happend when looking for available nodes. Stderr was not empty."
+        logger.error(msg); raise SlurmCallError(msg)
+
+    return max_av_nodes

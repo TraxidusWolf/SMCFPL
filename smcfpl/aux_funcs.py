@@ -8,12 +8,14 @@ from pandas import DataFrame as pd__DataFrame, date_range as pd__date_range, Ser
 from pandas import datetime as pd__datetime, set_option as pd__set_option
 from pandas import concat as pd__concat
 from numpy import mean as np__mean, nan as np__NaN, arange as np__arange, bool_ as np__bool_
-from numpy import zeros as np__zeros
+from numpy import zeros as np__zeros, c_ as np__c_, ones as np__ones, array as np__array
+from numpy import tile as np__tile, eye as np__eye
 from numpy.random import uniform as np_random__uniform, normal as np__random__normal
 from numpy.random import seed as np__random__seed
 from numpy.random import choice as np__random__choice
 from dateutil.relativedelta import relativedelta as du__relativedelta
 from collections import OrderedDict as collections__OrderedDict
+from itertools import cycle as it__cycle, islice as it__islice
 
 import locale
 import logging
@@ -1165,3 +1167,148 @@ def TipoCong(Grid, max_load=100):
 
     # Retorna valores
     return (ListaCongInter, ListaCongIntra)
+
+
+def count_twice_from(start):
+    """ Generator: Each value is counted twice from 'start' """
+    curr_num = start
+    while True:
+        for time in range(2):
+            # yield it twice before continue
+            yield curr_num
+        curr_num += 1
+
+
+def calc_sending_matrix_cols(total_numbers, row_size, n_groups):
+    """
+        Note: total_numbers > n_groups > magic_num to work.
+        Matrix can be divided into 3 part: Ones; transition; identity.
+        Each C# represent the columns of each one, respectively.
+    """
+    magic_num = total_numbers // row_size  # for definition is espected to be integer
+    if total_numbers < n_groups:
+        msg = "total_numbers < n_groups is not allowed."
+        raise ValueError(msg)
+    elif n_groups < magic_num:
+        msg = "n_groups < magic_num is not allowed."
+        raise ValueError(msg)
+    # initialize generators
+    C2_ser = it__cycle([0, 1])  # counted from magic_num
+    C3_ser = count_twice_from(0)  # counted from magic_num
+    # configure generators to return value according to 'C' and get the value
+    C2 = next(it__islice(C2_ser, n_groups - magic_num, None))
+    C3 = next(it__islice(C3_ser, n_groups - magic_num, None))
+    C1 = n_groups - C2 * 2 - C3 * row_size
+    # configure generators to start at magic_num
+    return (C1, C2, C3)
+
+
+def equalize_int_into_int_list(NumCasesExpected, nodes_to_use):
+    """
+        Split number 'NumCasesExpected' into list of length 'nodes_to_use' with integer numbers.
+        Used to calc_sending_to_nodes_matrix
+    """
+    if NumCasesExpected < nodes_to_use:
+        out_list = [0] * nodes_to_use
+        for i in range(nodes_to_use):
+            if NumCasesExpected <= 0:
+                break
+            out_list[i] = 1
+            NumCasesExpected -= 1
+        return out_list
+    else:
+        NTrbjsXNodo = NumCasesExpected // nodes_to_use
+        NTrbjsRest = NumCasesExpected % nodes_to_use
+        if NTrbjsRest:
+            return [NTrbjsXNodo] * (nodes_to_use - 1) + [NTrbjsRest + NTrbjsXNodo]
+        else:
+            return [NTrbjsXNodo] * nodes_to_use
+
+
+def calc_sending_to_nodes_matrix(total_numbers, n_groups, some_list):
+    """
+        To balance as most possible solution is split in two. No column has all zeros.
+        When (total/row_size >= n_groups), i.e., numbers are at most 1 o each column.
+            calls: equalize_int_into_int_list()
+        When (total/row_size < n_groups), i.e., max val is 1. Matrix has 1 and 0's.
+            calls: equalize_int_into_int_list()
+
+        Returns a matrix balanced well enough. Dimensions (row_size x n_groups)
+    """
+    row_size = len(some_list)
+    col_size = n_groups
+
+    magic_num = total_numbers // row_size
+    # initialize output matrix
+    mat = np__zeros((row_size, col_size))
+
+    # solves the case:
+    if magic_num >= n_groups:
+        # works super excellent
+        ith_row_vals = equalize_int_into_int_list(magic_num, n_groups)
+        for i in range(row_size):
+            mat[i, :] = ith_row_vals
+    else:  # Solves case: total/row_size < n_groups
+        C1, C2, C3 = calc_sending_matrix_cols(total_numbers, row_size, n_groups)
+        ones_mat = np__ones((row_size, C1))
+        transition_mat = np__array([[1, 1, 0], [0, 0, 1]]).T  # HARD CODED!!!
+        transition_mats = np__tile( transition_mat , (1, C2))
+        indentity_mats = np__tile( np__eye(row_size), (1, C3))
+        mat = np__c_[ones_mat, transition_mats, indentity_mats]
+    return mat
+
+
+def split_num_into_hydrologies(NumCasesExpected, nodes_to_use, use_hydrologies):
+    """
+        Returns a list of dict, each keyed with list 'use_hydrologies' names.
+        Tries to equalize the load across number of nodes defined in 'nodes_to_use'.
+    """
+    mat = calc_sending_to_nodes_matrix(NumCasesExpected, nodes_to_use, use_hydrologies)
+    out_list = []
+    if nodes_to_use != mat.shape[1]:
+        msg = "nodes_to_use is not same as matrix columns. Function 'calc_sending_to_nodes_matrix()' didn't work properly."
+        logger.erro(msg); raise ValueError(msg)
+    for j in mat.T:  # iterate over columns
+        node_dict = dict()
+        for hyd_name in use_hydrologies:
+            node_dict.update({hyd_name: j.astype(int).tolist()})
+        out_list.append( node_dict )
+    return out_list
+
+
+def interprete_list_of_groups(list_of_groups):
+    """
+        Creates a string as an interpretation of what the 'list_of_gruops' is,
+        e.g., for list [2,2,2,1] returns: '3 groups of "2" and one of "1"'.
+
+        Phrase which will be inserted into #: "Dividing {...} cases into {#}, across {...} nodes."
+    """
+    d = {item: list_of_groups.count(item) for item in set(list_of_groups)}
+    texto = ''
+    for i, (k, v) in enumerate(d.items(), start=1):
+        texto += '{} groups of "{}"'.format(v, k)
+        if i == len(d) - 1:
+            texto += ' and '
+        elif i == len(d):
+            pass
+        else:
+            texto += ', '
+    return texto
+
+
+def configure_input_nodes(input_val, max_val):
+    """
+      Input_val might be 'Max', None, or int > 0.
+      Returns proper value according to it's value:
+        int   -> min(input_val, max_val)
+        'Max' -> max_val
+        None  -> 1
+    """
+    if input_val is None:
+        return 1
+    elif isinstance(input_val, str):
+        return max_val
+    elif isinstance(input_val, int):
+        return min(max_val, input_val)
+    else:
+        raise ValueError("input_val not predicted!")

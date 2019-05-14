@@ -51,3 +51,18 @@ class LoadFlowError(Exception):
 class DemandGreaterThanInstalledCapacity(Exception):
     """ Used to alert of installed capacity problems. """
     pass
+
+
+class SlurmCallError(Exception):
+    """ Used to alert general Slurm calling errors. """
+    pass
+
+
+class sinfoNotAvailable(Exception):
+    """ Used to alert general sinfo program errors. """
+    pass
+
+
+class NoNodesAvailable(Exception):
+    """ Used when no cluster nodes are available. """
+    pass
