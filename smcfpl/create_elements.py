@@ -38,10 +38,11 @@ import logging
 # define global loggers
 aux_funcs.setup_logger('stdout_only', level=logging.DEBUG)
 aux_funcs.setup_logger('Intra_congestion', log_file=r'IntraCongs.log',
-                       headers='LogInfo,StageNum,CaseNum,TypeElmnt,IndTable,loading_percent')
+                       )
 
 # create local logger variable
 logger = logging.getLogger('stdout_only')
+logger_IntraCong = logging.getLogger('stdout_only')
 # Cambia logger level de pandapower al actual
 logging.getLogger("pandapower").setLevel(logger.level)
 
@@ -71,8 +72,10 @@ class Simulation(object):
             :type UsaSlurm: dict
 
         """
+
         logger.debug("! Initializating class Simulation(...)")
         STime = dt.now()
+
         #
         # Atributos desde entradas
         self.simulation_name = simulation_name  # (str)
@@ -310,6 +313,10 @@ class Simulation(object):
     def run(self):
         logger.debug("Running method Simulation.run()...")
         STime = dt.now()
+
+        # initialize first row of logger_IntraCong if headers were declared
+        headers = 'LogInfo,StageNum,CaseNum,TypeElmnt,IndTable,loading_percent'
+        logger_IntraCong.info(headers)
 
         # Comienza con la ejecución de lo cálculos
         if self.UsaSlurm:
