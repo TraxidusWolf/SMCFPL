@@ -1075,7 +1075,7 @@ def TipoCong(Grid, max_load=100):
             # inicializa grupo de congestiones comunes
             GrupoCongCom = {'line': [], 'trafo': []}
             # Por cada arco del subgrafo, busca equivalente en Grid
-            for Arco in SubGrafo.edges:
+            for Arco in SubGrafo.edges():
                 # Obtiene los nodos/indice de barras del Grid del arco
                 NIni = Arco[0]
                 NFin = Arco[1]
@@ -1144,7 +1144,7 @@ def TipoCong(Grid, max_load=100):
             # inicializa grupo de congestiones comunes
             GrupoCongCom = {'line': [], 'trafo': []}
             # Por cada arco del subgrafo, busca equivalente en Grid
-            for Arco in SubGrafo.edges:
+            for Arco in SubGrafo.edges():
                 # Obtiene los nodos/indice de barras del Grid del arco
                 NIni = Arco[0]
                 NFin = Arco[1]

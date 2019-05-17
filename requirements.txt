@@ -2,5 +2,5 @@ pandas==0.20.3
 xlrd>=1.0.0
 pandapower==1.6.1
 pypower>=5.1.4
-networkx>=2.2
+networkx==1.11
 numpy>=1.15.4
