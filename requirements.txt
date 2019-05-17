@@ -1,4 +1,4 @@
-pandas==0.20.3
+pandas>=0.24.2
 xlrd>=1.0.0
 pandapower==1.6.1
 pypower>=5.1.4

@@ -340,8 +340,12 @@ def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_
                 valor_abril_siguiente = DF_actual['E_aflu [GWh]'].iloc[-1]  # repite el último valor
                 print("'valor_abril_siguiente' no posee valores históricos, i.e., no hay datos después del año hidrológico {}".format(DF_actual.name))
             # expande el DF_actual agregando un mes más al final
+            # pandas version 0.24.2
             DF_actual = DF_actual.append( pd__Series({'E_aflu [GWh]': valor_abril_siguiente}, name='abril'),
                                           ignore_index=False, verify_integrity=False, sort=None)  # agrega df una fila después.
+            # pandas version 0.20.3
+            # DF_actual = DF_actual.append( pd__Series({'E_aflu [GWh]': valor_abril_siguiente}, name='abril'),
+            #                               ignore_index=False, verify_integrity=False)  # agrega df una fila después.
 
             # 4.- Encuentra la variación intermensual en el año hidrológico desde la muestra. Identificar la variación al mes siguiente respecto del próximo.
             DF_VarMens = DF_actual.diff(periods=1, axis='index')  # calcula la diferencia de cada fila siguiente respecto a la 'actual'
@@ -377,8 +381,12 @@ def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_
             DF_HidrologiasFuturas.loc[Anio, 'E ' + HidNom] = NuevaEAflu
 
             # 8.- calcula la PE de la energía afluente del año ocurrente, en la hidrología de estudio, como si éste participara de la muestra
+            # pandas version 0.24.2
             DF_temp = DF_PE_anual[['Año', 'TOTAL']].append( pd__DataFrame({'TOTAL': [NuevaEAflu], 'Año': ['futuro']}),
                                                             ignore_index=True, verify_integrity=False, sort=False )
+            # pandas version 0.20.3
+            # DF_temp = DF_PE_anual[['Año', 'TOTAL']].append( pd__DataFrame({'TOTAL': [NuevaEAflu], 'Año': ['futuro']}),
+            #                                                 ignore_index=True, verify_integrity=False)
             DF_temp = CalculaPE_DataFrame(DF_temp)
 
             # 9.- obtiene la PE del año futuro a la asigna en la hidrología ocurrente al DataFrame de salida
