@@ -36,7 +36,7 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
         stderr_name_f.format(job_name, '%j'),
     )
     python_cmd = 'module load python; python -c "'
-    python_cmd += 'from core_calc import in_node_manager;'
+    python_cmd += 'from smcfpl.core_calc import in_node_manager;'
     python_cmd += 'in_node_manager({args})"'
     python_cmd = python_cmd.format(args=','.join(Args))
 
