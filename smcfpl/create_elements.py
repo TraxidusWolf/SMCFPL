@@ -121,8 +121,8 @@ class Simulation(object):
                 required_keys = {
                     'NumNodes': {int: '{}>0', str: "'{}'=='Max'", type(None): '{} is None'},
                     'NodeWaittingTime': {dt__timedelta: 'True'},  # any timedelta value
-                    'ntasks': {int: '{}>0'},
-                    'cpu_per_tasks': {int: '{}>0'},
+                    # 'ntasks': {int: '{}>0'},
+                    # 'cpu_per_tasks': {int: '{}>0'},
                 }
                 for k, sk in required_keys.items():
                     # stores or condition for type
@@ -358,7 +358,7 @@ class Simulation(object):
             #    1-DesvEstDespCenEyS
             #    2-DesvEstDespCenP
             #    3-DictTypoCargasEta
-            #    4-DF_GenType_per_unit
+            #    4-DictTiposGenNoSlack
             #    5-abs_OutFilePath
             #    6-NumVecesDem
             #    7-NumVecesGen
@@ -367,7 +367,7 @@ class Simulation(object):
                 self.DesvEstDespCenEyS,
                 self.DesvEstDespCenP,
                 self.DictTypoCargasEta,
-                self.DF_GenType_per_unit,
+                self.DictTiposGenNoSlack,
                 self.abs_OutFilePath,
                 self.NumVecesDem,
                 self.NumVecesGen,
@@ -407,6 +407,7 @@ class Simulation(object):
                                                                           self.ListaHidrologias)
 
             n_groups = len(cases_per_groups)  # == len(hydro_dict_cases_list)
+            n_cases = self.NumCasesExpected
             w_time = self.UsaSlurm['NodeWaittingTime']  # timeout for node response
 
             # Parallel parameters
@@ -445,13 +446,16 @@ class Simulation(object):
                     )
                     )
                 else:
-                    n_cases_succeded, n_stages_succeded = send_work(
+                    # n_cases_succeded, n_stages_succeded = send_work(
+                    send_work(
                         self,
                         group_info,
                         BD_fnames,
                         gral_params,
                         w_time,
                     )
+                    n_cases_succeded = 0
+                    n_stages_succeded = 0
                     total_cases_succeded += n_cases_succeded
                     total_stages_succeded += n_stages_succeded
 

@@ -40,11 +40,11 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     python_cmd += 'manage({args})"'
     python_cmd = python_cmd.format(args=','.join(Args))
 
+    msg = "RUN Command: {}".format(sbatch_cmd + python_cmd)
     # lunch full sbatch script to node
     sbatch_cmd = sl__split(sbatch_cmd) + [python_cmd]
-    msg = "RUN Command:".format(sbatch_cmd)
-    logger.debug(msg)
     output_cmd = sp__run(sbatch_cmd, shell=False, stdout=sp__PIPE, stderr=sp__PIPE)
+    logger.debug(msg)
 
     # fetch job number
     job_id = output_cmd.stdout.decode('utf-8')
@@ -63,10 +63,11 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     stderr_fname = stderr_name_f.format(job_name, job_id)
 
     # get node name of job id
-    time.sleep(1)  # it's to fast. Wait for job allocation
+    time.sleep(2)  # it's to fast. Wait for job allocation
     nodenom_cmd = """squeue --jobs={} --format="%N" --noheader""".format(job_id)
     node_name = sp__run(sl__split(nodenom_cmd), shell=False, stdout=sp__PIPE).stdout.decode().rstrip('\n')
-    print("Waitting response from Node {}: ...".format(node_name))
+    msg = "Waiting response from Node {}: ...".format(node_name)
+    logger.info(msg)
 
     # waits for output file to appear (up to waiting_time; w_time). Checks directory every some seconds for the files.
     T_now = dt__datetime.now()
