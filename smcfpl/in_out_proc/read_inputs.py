@@ -118,9 +118,15 @@ def Lee_Hoja_planilla(RutaCompleta, NombreHoja, EsParamHid, *args):
 
     if EsParamHid:
         # notar que header = [...] retorna un multicolumns dataframe que tiene varios títulos (pudiendo repetirse el nombre). Set de columnas son set de tuplas.
-        df = pd__read_excel( RutaCompleta, sheetname=NombreHoja, header=[0, 1], usecols=range(len(args) + 1) )  # uno más para leer columns 'Hidrologías' (columns.names)
+        # pandas version 0.24.0
+        # df = pd__read_excel( RutaCompleta, sheet_name=NombreHoja, header=[0, 1], usecols=range(len(args) + 1) )  # uno más para leer columns 'Hidrologías' (columns.names)
+        # pandas version 0.20.3
+        df = pd__read_excel( RutaCompleta, sheetname=NombreHoja, header=[0, 1], parse_cols=range(len(args) + 1) )  # uno más para leer columns 'Hidrologías' (columns.names)
     else:
-        df = pd__read_excel( RutaCompleta, sheetname=NombreHoja, header=0, usecols=range(len(args)) )
+        # pandas version 0.24.0
+        # df = pd__read_excel( RutaCompleta, sheet_name=NombreHoja, header=0, usecols=range(len(args)) )
+        # pandas version 0.20.3
+        df = pd__read_excel( RutaCompleta, sheet_name=NombreHoja, header=0, parse_cols=range(len(args)) )
 
     if df.empty:
         # verifica si hoja está vacía
