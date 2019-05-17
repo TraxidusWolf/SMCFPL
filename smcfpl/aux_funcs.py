@@ -341,11 +341,11 @@ def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_
                 print("'valor_abril_siguiente' no posee valores históricos, i.e., no hay datos después del año hidrológico {}".format(DF_actual.name))
             # expande el DF_actual agregando un mes más al final
             # pandas version 0.24.2
-            DF_actual = DF_actual.append( pd__Series({'E_aflu [GWh]': valor_abril_siguiente}, name='abril'),
-                                          ignore_index=False, verify_integrity=False, sort=None)  # agrega df una fila después.
-            # pandas version 0.20.3
             # DF_actual = DF_actual.append( pd__Series({'E_aflu [GWh]': valor_abril_siguiente}, name='abril'),
-            #                               ignore_index=False, verify_integrity=False)  # agrega df una fila después.
+            #                               ignore_index=False, verify_integrity=False, sort=None)  # agrega df una fila después.
+            # pandas version 0.20.3
+            DF_actual = DF_actual.append( pd__Series({'E_aflu [GWh]': valor_abril_siguiente}, name='abril'),
+                                          ignore_index=False, verify_integrity=False)  # agrega df una fila después.
 
             # 4.- Encuentra la variación intermensual en el año hidrológico desde la muestra. Identificar la variación al mes siguiente respecto del próximo.
             DF_VarMens = DF_actual.diff(periods=1, axis='index')  # calcula la diferencia de cada fila siguiente respecto a la 'actual'
@@ -368,11 +368,11 @@ def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_
                 NuevaEAflu = np_random__uniform(MinE_Anio, MaxE_Anio)  # valor en [GWh]
             # 6.2.- En caso de hidrología seca
             elif HidNom == 'HidSeca':
-                E_HidMedia = DF_HidrologiasFuturas.loc[Anio, 'E HidMedia'].values[0]
+                E_HidMedia = DF_HidrologiasFuturas.at[Anio, 'E HidMedia']
                 NuevaEAflu = np_random__uniform(MinE_Anio, E_HidMedia)  # valor en [GWh]
             # 6.3.- En caso de hidrología humeda
             elif HidNom == 'HidHumeda':
-                E_HidMedia = DF_HidrologiasFuturas.loc[Anio, 'E HidMedia'].values[0]
+                E_HidMedia = DF_HidrologiasFuturas.at[Anio, 'E HidMedia']
                 NuevaEAflu = np_random__uniform(E_HidMedia, MaxE_Anio)  # valor en [GWh]
             else:
                 raise ValueError("'HidNom' no posee nombre válido.")
@@ -382,11 +382,11 @@ def Crea_hidrologias_futuras(DF_HistHid, DF_Etapas, PE_HidSeca, PE_HidMedia, PE_
 
             # 8.- calcula la PE de la energía afluente del año ocurrente, en la hidrología de estudio, como si éste participara de la muestra
             # pandas version 0.24.2
-            DF_temp = DF_PE_anual[['Año', 'TOTAL']].append( pd__DataFrame({'TOTAL': [NuevaEAflu], 'Año': ['futuro']}),
-                                                            ignore_index=True, verify_integrity=False, sort=False )
-            # pandas version 0.20.3
             # DF_temp = DF_PE_anual[['Año', 'TOTAL']].append( pd__DataFrame({'TOTAL': [NuevaEAflu], 'Año': ['futuro']}),
-            #                                                 ignore_index=True, verify_integrity=False)
+            #                                                 ignore_index=True, verify_integrity=False, sort=False )
+            # pandas version 0.20.3
+            DF_temp = DF_PE_anual[['Año', 'TOTAL']].append( pd__DataFrame({'TOTAL': [NuevaEAflu], 'Año': ['futuro']}),
+                                                            ignore_index=True, verify_integrity=False)
             DF_temp = CalculaPE_DataFrame(DF_temp)
 
             # 9.- obtiene la PE del año futuro a la asigna en la hidrología ocurrente al DataFrame de salida
@@ -544,7 +544,7 @@ def Mantenimientos_a_etapas(DF_MantBar, DF_MantTx, DF_MantGen, DF_MantLoad, DF_E
                 ToConcat = pdSerie_Mant[ColumnasSalida].to_frame().T
                 ToConcat.index = [indx]
                 DF_Salida = pd__concat( [DF_Salida, ToConcat], axis='index',  join='outer', join_axes=None, ignore_index=False,
-                                        keys=None, levels=None, names=None, verify_integrity=False, sort=None, copy=True)
+                                        keys=None, levels=None, names=None, verify_integrity=False, copy=True)
 
         DF_Salida.index.name = 'EtaNum'  # agrega nombre de indices
         # Da formato (casting) a las columnas especiales (booleanas)
