@@ -36,11 +36,11 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
         stderr_name_f.format(job_name, '%j'),
     )
     python_cmd = 'module load python; python -c "'
-    python_cmd += 'from in_node_manager import manage;'
-    python_cmd += 'manage({args})"'
+    python_cmd += 'from core_calc import in_node_manager;'
+    python_cmd += 'in_node_manager({args})"'
     python_cmd = python_cmd.format(args=','.join(Args))
 
-    msg = "RUN Command: {}".format(sbatch_cmd + python_cmd)
+    msg = "RUN Command:\n{}".format(sbatch_cmd + python_cmd)
     # lunch full sbatch script to node
     sbatch_cmd = sl__split(sbatch_cmd) + [python_cmd]
     output_cmd = sp__run(sbatch_cmd, shell=False, stdout=sp__PIPE, stderr=sp__PIPE)
@@ -63,7 +63,7 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     stderr_fname = stderr_name_f.format(job_name, job_id)
 
     # get node name of job id
-    time.sleep(2)  # it's to fast. Wait for job allocation
+    time.sleep(0.5)  # it's to fast. Wait for job allocation
     nodenom_cmd = """squeue --jobs={} --format="%N" --noheader""".format(job_id)
     node_name = sp__run(sl__split(nodenom_cmd), shell=False, stdout=sp__PIPE).stdout.decode().rstrip('\n')
     msg = "Waiting response from Node {}: ...".format(node_name)

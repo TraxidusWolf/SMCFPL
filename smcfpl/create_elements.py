@@ -366,8 +366,8 @@ class Simulation(object):
                 self.UseRandomSeed,
                 self.DesvEstDespCenEyS,
                 self.DesvEstDespCenP,
-                self.DictTypoCargasEta,
-                self.DictTiposGenNoSlack,
+                self.DictTypoCargasEta.to_dict(),  # original DataFrames
+                self.DictTiposGenNoSlack.to_dict(),  # original DataFrames
                 self.abs_OutFilePath,
                 self.NumVecesDem,
                 self.NumVecesGen,
