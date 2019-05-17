@@ -357,17 +357,13 @@ class Simulation(object):
             #    0-random_seed
             #    1-DesvEstDespCenEyS
             #    2-DesvEstDespCenP
-            #    3-DictTypoCargasEta
-            #    4-DictTiposGenNoSlack
-            #    5-abs_OutFilePath
-            #    6-NumVecesDem
-            #    7-NumVecesGen
+            #    3-abs_OutFilePath
+            #    4-NumVecesDem
+            #    5-NumVecesGen
             gral_params = [
                 self.UseRandomSeed,
                 self.DesvEstDespCenEyS,
                 self.DesvEstDespCenP,
-                self.DictTypoCargasEta.to_dict(),  # original DataFrames
-                self.DictTiposGenNoSlack.to_dict(),  # original DataFrames
                 self.abs_OutFilePath,
                 self.NumVecesDem,
                 self.NumVecesGen,

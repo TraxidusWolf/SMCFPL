@@ -73,11 +73,11 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     random_seed = gral_params[0]
     DesvEstDespCenEyS = gral_params[1]
     DesvEstDespCenP = gral_params[2]
-    DictTypoCargasEta = gral_params[3]
-    DF_GenType_per_unit = gral_params[4]
-    abs_OutFilePath = gral_params[5]
-    NumVecesDem = gral_params[6]
-    NumVecesGen = gral_params[7]
+    abs_OutFilePath = gral_params[3]
+    NumVecesDem = gral_params[4]
+    NumVecesGen = gral_params[5]
+    DictTypoCargasEta = {k: v['PandaPowerNet']['load'][['type']] for k, v in grillas.items()}
+    DF_GenType_per_unit = {k: d['ExtraData']['Tipos'] for k, d in grillas.items()}
     ################################################
     ################################################
     ################################################
