@@ -34,7 +34,8 @@ Sim = smcfpl.Simulation(
     DesvEstDespCenP = 0.2,  # desviación estándar considerada para el despacho de centrales Pasada
     NumParallelCPU = None,  # Puede ser None: No usa paralelismo en escritura ni lectura ni cálculo, 'Max' para
     # NumParallelCPU = 'Max',  # Puede ser False: No usa paralelismo en escritura ni lectura ni cálculo, 'Max' para
-    # utilizar todos lo procesadores fisicos, o un integer para modificar el tamaño de la pool
+    # utilizar todos lo procesadores fisicos, o un integer para modificar el tamaño de la pool. No posee efecto directo
+    # en Node Mode.
     # UsaSlurm=False,
     UsaSlurm = dict(NumNodes=None, NodeWaittingTime=dt.timedelta(minutes=5)),  # keys must exists
     # UsaSlurm = dict(NumNodes=2, NodeWaittingTime=dt.timedelta(minutes=5)),  # keys must exists
