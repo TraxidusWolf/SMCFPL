@@ -63,8 +63,8 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     NumVecesGen = gral_params[6]
     # read BD files on head node
     base_BDs = dict.fromkeys(base_BD_names, None)
-    for fname in base_BD_names:
-        with open(abs_path_temp + os__sep + fname + '.p', 'rb') as f:
+    for fname in base_BD_names:  # pickle assumed
+        with open(abs_path_temp + os__sep + fname, 'rb') as f:
             base_BDs[fname] = pickle.load(f)
     ################################################
     ################################################
@@ -137,10 +137,12 @@ def in_node_manager(group_info, base_BD_names, gral_params):
                 )
             )
             nth_case += 1
-            if nth_G < cases_per_hid:
+            # increments each G per case. If maxed increment D once and reset G counter
+            if nth_G < NumVecesGen:
                 nth_G += 1
-                if nth_D < cases_per_hid:
+                if nth_D < NumVecesDem:
                     nth_D += 1
+                    nth_G = 0
 
     # fetch parallel status info
     for result in results:

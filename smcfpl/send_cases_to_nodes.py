@@ -63,7 +63,7 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     stderr_fname = stderr_name_f.format(job_name, job_id)
 
     # get node name of job id
-    time.sleep(0.3)  # it's to fast. Wait for job allocation
+    time.sleep(0.5)  # it's to fast. Wait for job allocation
     nodenom_cmd = """squeue --jobs={} --format="%N" --noheader""".format(job_id)
     node_name = sp__run(sl__split(nodenom_cmd), shell=False, stdout=sp__PIPE).stdout.decode().rstrip('\n')
     msg = "Waiting response from Node {}: ...".format(node_name)
