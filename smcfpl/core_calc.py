@@ -22,6 +22,7 @@ from pandas import concat as pd__concat
 from numpy import cos as np__cos, real as np__real, sign as np__sign
 from numpy import isnan as np__isnan, seterr as np__seterr
 from scipy.sparse import linalg
+from pickle import load as pickle__load
 # from smcfpl.aux_funcs import overloaded_trafo2w as aux_smcfpl__overloaded_trafo2w
 # from smcfpl.aux_funcs import overloaded_trafo3w as aux_smcfpl__overloaded_trafo3w
 from smcfpl.in_out_proc import write_output_case as smcfpl__in_out_proc__write_output_case
