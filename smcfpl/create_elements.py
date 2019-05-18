@@ -24,7 +24,6 @@ from datetime import timedelta as dt__timedelta
 from dateutil import relativedelta as du__relativedelta
 from shutil import rmtree as shutil__rmtree
 from pickle import load as pickle__load, dump as pickle__dump
-from copy import deepcopy as copy__deepcopy
 from pandapower import create_empty_network as pp__create_empty_network, create_buses as pp__create_buses
 from pandapower import create_line as pp__create_line, create_std_types as pp__create_std_types
 from pandapower import create_transformer as pp__create_transformer, create_transformer3w as pp__create_transformer3w
