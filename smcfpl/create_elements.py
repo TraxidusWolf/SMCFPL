@@ -102,7 +102,7 @@ class Simulation(object):
         self.NumCasesExpected = NumVecesDem * NumVecesGen * len(self.ListaHidrologias)
         self.DesvEstDespCenEyS = DesvEstDespCenEyS  # 0 <= (float) <= 1
         self.DesvEstDespCenP = DesvEstDespCenP  # 0 <= (float) <= 1
-        self.Working_dir = Working_dir
+        self.Working_dir = os__path__abspath(Working_dir)
         if isinstance(NumParallelCPU, int) | (NumParallelCPU is None) | (NumParallelCPU == 'Max'):
             self.NumParallelCPU = NumParallelCPU
         else:
@@ -358,13 +358,15 @@ class Simulation(object):
             #    1-DesvEstDespCenEyS
             #    2-DesvEstDespCenP
             #    3-abs_OutFilePath
-            #    4-NumVecesDem
-            #    5-NumVecesGen
+            #    4-absolute working dir
+            #    5-NumVecesDem
+            #    6-NumVecesGen
             gral_params = [
                 self.UseRandomSeed,
                 self.DesvEstDespCenEyS,
                 self.DesvEstDespCenP,
                 self.abs_OutFilePath,
+                self.Working_dir,
                 self.NumVecesDem,
                 self.NumVecesGen,
             ]
@@ -374,7 +376,6 @@ class Simulation(object):
 
             # Interpreters the number of nodes to use
             nodes_to_use = aux_funcs.configure_input_nodes(self.UsaSlurm['NumNodes'], max_av_nodes)
-            print("nodes_to_use:", nodes_to_use)
 
             if nodes_to_use > self.NumCasesExpected:
                 # Necessary, otherwise nodes will have no work to do.
@@ -391,10 +392,6 @@ class Simulation(object):
             mat_cases_per_groups = aux_funcs.calc_sending_to_nodes_matrix( self.NumCasesExpected,
                                                                            nodes_to_use,
                                                                            self.ListaHidrologias)
-            print("self.NumVecesGen:", self.NumVecesGen)
-            print("self.NumVecesDem:", self.NumVecesDem)
-            print("self.ListaHidrologias:", self.ListaHidrologias)
-            print("mat_cases_per_groups:\n", mat_cases_per_groups)
             n_cases_per_groups = mat_cases_per_groups.sum(axis=0).astype(int).tolist()  # sum cols
             list_interpreted_msg = aux_funcs.interprete_list_of_groups(n_cases_per_groups)
             msg = "Dividing {} cases into {}, across {} nodes...".format( self.NumCasesExpected,
@@ -476,10 +473,6 @@ class Simulation(object):
                     else:
                         nth_G_start[hid_nom] = next_G_start % self.NumVecesGen
                         nth_D_start[hid_nom] += next_G_start // self.NumVecesGen
-                # print("group_details:", group_details)
-                # print("nth_G_start:", nth_G_start)
-                # print("nth_D_start:", nth_D_start)
-                # print()
 
             if self.UsaSlurm['NumNodes']:  # En paralelo
                 # Get results from parallelism , if it exists

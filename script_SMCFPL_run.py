@@ -37,7 +37,7 @@ Sim = smcfpl.Simulation(
     # utilizar todos lo procesadores fisicos, o un integer para modificar el tamaño de la pool. No posee efecto directo
     # en Node Mode.
     # UsaSlurm=False,
-    UsaSlurm = dict(NumNodes=4, NodeWaittingTime=dt.timedelta(minutes=5)),  # keys must exists
+    UsaSlurm = dict(NumNodes=2, NodeWaittingTime=dt.timedelta(minutes=5)),  # keys must exists
     # UsaSlurm = dict(NumNodes=2, NodeWaittingTime=dt.timedelta(minutes=5)),  # keys must exists
     # UsaSlurm = dict(NumNodes='Max', NodeWaittingTime=dt.timedelta(minutes=5)),  # keys must exists
     # NumNodos es igual que NumParallelCPU (None, int, 'Max'), este último se usa dentro de nodos cuando está activado Slurm.

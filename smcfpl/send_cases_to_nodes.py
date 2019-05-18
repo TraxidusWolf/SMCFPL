@@ -40,11 +40,11 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     python_cmd += 'in_node_manager({args})"'
     python_cmd = python_cmd.format(args=','.join(Args))
 
-    msg = "RUN Command:\n{}".format(sbatch_cmd + python_cmd)
+    # msg = "RUN Command:\n{}".format(sbatch_cmd + python_cmd)
     # lunch full sbatch script to node
     sbatch_cmd = sl__split(sbatch_cmd) + [python_cmd]
     output_cmd = sp__run(sbatch_cmd, shell=False, stdout=sp__PIPE, stderr=sp__PIPE)
-    logger.debug(msg)
+    # logger.debug(msg)
 
     # fetch job number
     job_id = output_cmd.stdout.decode('utf-8')
@@ -63,7 +63,7 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     stderr_fname = stderr_name_f.format(job_name, job_id)
 
     # get node name of job id
-    time.sleep(0.5)  # it's to fast. Wait for job allocation
+    time.sleep(0.1)  # it's to fast. Wait for job allocation
     nodenom_cmd = """squeue --jobs={} --format="%N" --noheader""".format(job_id)
     node_name = sp__run(sl__split(nodenom_cmd), shell=False, stdout=sp__PIPE).stdout.decode().rstrip('\n')
     msg = "Waiting response from Node {}: ...".format(node_name)
@@ -72,7 +72,7 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     # waits for output file to appear (up to waiting_time; w_time). Checks directory every some seconds for the files.
     T_now = dt__datetime.now()
     while dt__datetime.now() - T_now < w_time:
-        # waits for a seconds so slurm can allocate jobs properly
+        # waits for a seconds so slurm can allocate jobs properly and re read jobs
         time.sleep(1)
         # verifies if job was allocated, find job in queue. Remember it will not be allocated if insuficient nodes are available
         bash_cmd1 = sl__split("squeue --noheader --jobs={}".format(job_id))
@@ -93,42 +93,3 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
 
     # return status values(?) - (n_cases_succeded, n_stages_succeded)
     return job_id
-
-    # # Agrega al Pool simultáneamente varios casos, para enviarlos y esperarlos en paralelo
-    # # Envía simultáneamente varios casos en serie
-    # for FolderName in DirsUsar:
-    #     print("FolderName:", FolderName)
-    #     Hydrology = FolderName.split('_')[0]
-    #     print("Hydrology:", Hydrology)
-    #     # -- Crea argumentos de la función Calcular --
-    #     # CasoNum
-    #     Argument1 = str(ContadorCasos)
-    #     # Hidrology
-    #     Argument2 = '"' + Hydrology + '"'
-    #     # Grillas
-    #     Argument3 = "{{StageNum: from_pickle('{0}'+'{1}'+'Grid_Eta{{}}.p'.format(StageNum)) for StageNum in {2} }}".format(
-    #         TempData_dir + os__sep + FolderName,
-    #         os__sep,
-    #         StageIndexesList)  # Double curly brackets for scape them
-    #     # StageIndexesList
-    #     Argument4 = str(StageIndexesList)
-    #     # DF_ParamHidEmb_hid
-    #     Argument5 = """read_csv("{}ParamHidEmb.csv", index_col=[0,1]).loc["{}", :]""".format(
-    #         TempData_dir + os__sep,
-    #         Hydrology)
-    #     # DF_seriesconf
-    #     Argument6 = """read_csv("{}seriesconf.csv", index_col=[0])""".format(
-    #         TempData_dir + os__sep)
-    #     # MaxItCongInter
-    #     Argument7 = MaxItCongInter
-    #     # MaxItCongIntra
-    #     Argument8 = MaxItCongIntra
-    #     # File_Caso
-    #     Argument9 = '"' + TempData_dir + os__sep + FolderName + '"'
-    #     # in_node
-    #     Argument10 = 'True'
-    #     Arguments = "{},{},{},{},{},{},{},{},{},{}".format(Argument1, Argument2, Argument3,
-    #                                                        Argument4, Argument5, Argument6,
-    #                                                        Argument7, Argument8, Argument9,
-    #                                                        Argument10)
-    #     # -- --

@@ -51,15 +51,16 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     n_groups = group_info[2]
     n_cases = group_info[3]
     group_details = group_info[4]
-    nth_G_start = group_info[5]
-    nth_D_start = group_info[6]
+    nth_G_start = group_info[5]  # 0-indexed
+    nth_D_start = group_info[6]  # 0-indexed
     # get some simulation parameters. Useful for every simulation. (came from self)
     random_seed = gral_params[0]
     DesvEstDespCenEyS = gral_params[1]
     DesvEstDespCenP = gral_params[2]
     abs_OutFilePath = gral_params[3]
-    NumVecesDem = gral_params[4]
-    NumVecesGen = gral_params[5]
+    working_dir = gral_params[4]
+    NumVecesDem = gral_params[5]
+    NumVecesGen = gral_params[6]
     # read BD files on head node
     base_BDs = dict.fromkeys(base_BD_names, None)
     for fname in base_BD_names:
@@ -97,6 +98,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
         # Note: if n_cases_per_hid == 0, this for loop is skipped
         for sub_nth_case in range(cases_per_hid):
             case_identifier = (case_hid, nth_D, nth_G)
+            print("nth_case: {}  == case_identifier: {}".format(nth_case, case_identifier))
             # filter database dependent on hydrology
             DF_PE_Hid = base_BDs['BD_Hydro'][HidNom]['DF_PEsXEtapa']
             # Creates an iterator (class type with __next__ dunder) for each loop (different values)
@@ -135,9 +137,9 @@ def in_node_manager(group_info, base_BD_names, gral_params):
                 )
             )
             nth_case += 1
-            if nth_G < group_details[case_hid]:
+            if nth_G < cases_per_hid:
                 nth_G += 1
-                if nth_D < group_details[case_hid]:
+                if nth_D < cases_per_hid:
                     nth_D += 1
 
     # fetch parallel status info
