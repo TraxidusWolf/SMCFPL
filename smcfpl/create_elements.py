@@ -358,7 +358,7 @@ class Simulation(object):
             #    1-DesvEstDespCenEyS
             #    2-DesvEstDespCenP
             #    3-abs_OutFilePath
-            #    4-absolute working dir
+            #    4-abs_path_temp
             #    5-NumVecesDem
             #    6-NumVecesGen
             gral_params = [
@@ -366,7 +366,7 @@ class Simulation(object):
                 self.DesvEstDespCenEyS,
                 self.DesvEstDespCenP,
                 self.abs_OutFilePath,
-                self.Working_dir,
+                self.abs_path_temp,
                 self.NumVecesDem,
                 self.NumVecesGen,
             ]

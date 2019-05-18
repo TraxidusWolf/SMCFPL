@@ -58,13 +58,13 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     DesvEstDespCenEyS = gral_params[1]
     DesvEstDespCenP = gral_params[2]
     abs_OutFilePath = gral_params[3]
-    working_dir = gral_params[4]
+    abs_path_temp = gral_params[4]
     NumVecesDem = gral_params[5]
     NumVecesGen = gral_params[6]
     # read BD files on head node
     base_BDs = dict.fromkeys(base_BD_names, None)
     for fname in base_BD_names:
-        with open(working_dir + os__sep + fname + '.p', 'rb') as f:
+        with open(abs_path_temp + os__sep + fname + '.p', 'rb') as f:
             base_BDs[fname] = pickle.load(f)
     ################################################
     ################################################
@@ -98,7 +98,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
         # Note: if n_cases_per_hid == 0, this for loop is skipped
         for sub_nth_case in range(cases_per_hid):
             case_identifier = (case_hid, nth_D, nth_G)
-            print("nth_case: {}  == case_identifier: {}".format(nth_case, case_identifier))
+            print("nth_case: {} == case_identifier: {}".format(nth_case, case_identifier))
             # filter database dependent on hydrology
             DF_PE_Hid = base_BDs['BD_Hydro'][HidNom]['DF_PEsXEtapa']
             # Creates an iterator (class type with __next__ dunder) for each loop (different values)
