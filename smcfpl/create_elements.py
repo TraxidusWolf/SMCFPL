@@ -432,6 +432,7 @@ class Simulation(object):
                     nth_G_start,
                     nth_D_start,
                 )
+                print("group_info ({}):\n{}".format(nth_group, group_info))
 
                 if self.UsaSlurm['NumNodes']:  # In parallel
                     results.append( Pool.apply_async(

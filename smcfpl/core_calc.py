@@ -103,7 +103,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
             case_identifier = (case_hid, nth_D, nth_G)
             print("nth_case: {} == case_identifier: {}".format(nth_case, case_identifier))
             # filter database dependent on hydrology
-            DF_PE_Hid = base_BDs['BD_Hydro.p'][HidNom]['DF_PEsXEtapa']
+            DF_PE_Hid = base_BDs['BD_Hydro.p'][case_hid]['DF_PEsXEtapa']
             # Creates an iterator (class type with __next__ dunder) for each loop (different values)
             instance_IterDem = aux_funcs.IteratorDemand(StageIndexesList=StageIndexesList,
                                                         DF_TasaCLib=DF_TasaCLib,  # pandas DataFrame
@@ -148,11 +148,14 @@ def in_node_manager(group_info, base_BD_names, gral_params):
                     nth_G = 0
 
     # fetch parallel status info
-    for result in results:
-        res = result.get()
-        msg = res[2]
-        print(msg)
-    msg = "Finished manage() for group {}/{}.".format(nth_group, n_groups)
+    # for result in results:
+    #     res = result.get()
+    #     msg = res[2]
+    #     print(msg)
+    msg = "Finished in_node_manager() for group {}/{} ({}/{}).".format( nth_group,
+                                                                        n_groups,
+                                                                        cases_per_group,
+                                                                        n_cases)
     logger.info(msg)
 
     return
