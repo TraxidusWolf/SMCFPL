@@ -66,7 +66,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     base_BDs = dict.fromkeys(base_BD_names, None)
     for fname in base_BD_names:  # pickle assumed
         with open(abs_path_temp + os__sep + fname, 'rb') as f:
-            base_BDs[fname] = pickle.load(f)
+            base_BDs[fname] = pickle__load(f)
     ################################################
     ################################################
     ################################################
