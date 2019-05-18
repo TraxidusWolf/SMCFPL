@@ -51,24 +51,8 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     n_groups = group_info[2]
     n_cases = group_info[3]
     group_details = group_info[4]
-    # read BD files on head node
-    base_BDs = dict.fromkeys(base_BD_names, None)
-    for fname in base_BD_names:
-        with open(fname + '.p', 'rb') as f:
-            base_BDs[fname] = pickle.load(f)
-    ################################################
-    ################################################
-    ################################################
-    ################################################
-    ################################################
-    # get general databases from file to each variable (came form file)
-    StageIndexesList = base_BDs['BD_Etapas.p'].idex.tolist()
-    DF_TasaCLib = base_BDs['BD_DemProy.p'][ ['TasaCliLib'] ]
-    DF_TasaCReg = base_BDs['BD_DemProy.p'][ ['TasaCliReg'] ]
-    DF_DesvDec = base_BDs['BD_DemProy.p'][ ['Desv_decimal'] ]
-    DF_HistGenERNC = base_BDs['BD_HistGenRenovable.p']
-    DF_TSF = base_BDs['BD_TSFProy.p']
-    grillas = base_BDs['BD_RedesXEtapa.p']
+    nth_G_start = group_info[5]
+    nth_D_start = group_info[6]
     # get some simulation parameters. Useful for every simulation. (came from self)
     random_seed = gral_params[0]
     DesvEstDespCenEyS = gral_params[1]
@@ -76,6 +60,24 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     abs_OutFilePath = gral_params[3]
     NumVecesDem = gral_params[4]
     NumVecesGen = gral_params[5]
+    # read BD files on head node
+    base_BDs = dict.fromkeys(base_BD_names, None)
+    for fname in base_BD_names:
+        with open(working_dir + os__sep + fname + '.p', 'rb') as f:
+            base_BDs[fname] = pickle.load(f)
+    ################################################
+    ################################################
+    ################################################
+    ################################################
+    ################################################
+    # get general databases from file to each variable (came form file)
+    StageIndexesList = base_BDs['BD_Etapas.p'].index.tolist()
+    DF_TasaCLib = base_BDs['BD_DemProy.p'][ ['TasaCliLib'] ]
+    DF_TasaCReg = base_BDs['BD_DemProy.p'][ ['TasaCliReg'] ]
+    DF_DesvDec = base_BDs['BD_DemProy.p'][ ['Desv_decimal'] ]
+    DF_HistGenERNC = base_BDs['BD_HistGenRenovable.p']
+    DF_TSF = base_BDs['BD_TSFProy.p']
+    grillas = base_BDs['BD_RedesXEtapa.p']
     DictTypoCargasEta = {k: v['PandaPowerNet']['load'][['type']] for k, v in grillas.items()}
     DF_GenType_per_unit = {k: d['ExtraData']['Tipos'] for k, d in grillas.items()}
     ################################################
@@ -88,12 +90,13 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     Pool = mu__Pool(n_cpu)
     results = []
     # cases processing
-    nth_case = (nth_group - 1) * cases_per_group + 1
-    D = G = 1
+    nth_case = (nth_group - 1) * cases_per_group + 1  # case associated with group
     for case_hid, cases_per_hid in group_details.items():
+        nth_G = nth_G_start[case_hid] + 1
+        nth_D = nth_D_start[case_hid] + 1
         # Note: if n_cases_per_hid == 0, this for loop is skipped
         for sub_nth_case in range(cases_per_hid):
-            case_identifier = (case_hid, D, G)
+            case_identifier = (case_hid, nth_D, nth_G)
             # filter database dependent on hydrology
             DF_PE_Hid = base_BDs['BD_Hydro'][HidNom]['DF_PEsXEtapa']
             # Creates an iterator (class type with __next__ dunder) for each loop (different values)
@@ -131,13 +134,11 @@ def in_node_manager(group_info, base_BD_names, gral_params):
                     }
                 )
             )
-            # print("In manage: nth_case:", nth_case, " case_hid:", case_hid, " n_cases_per_hid:", n_cases_per_hid)
             nth_case += 1
-            if G < NumVecesGen:
-                G = G + 1
-            else:
-                if D < NumVecesDem:
-                    D = D + 1
+            if nth_G < group_details[case_hid]:
+                nth_G += 1
+                if nth_D < group_details[case_hid]:
+                    nth_D += 1
 
     # fetch parallel status info
     for result in results:

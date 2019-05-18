@@ -1,6 +1,6 @@
 #!/bin/bash
 
-find .  -type d,f \
+find . \
 	! -name 'delete_non_escential.sh' \
 	! -path "./.git*" \
 	! -path "./TempData_39Bus_v7*" \

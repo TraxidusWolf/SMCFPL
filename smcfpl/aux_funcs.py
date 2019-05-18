@@ -1266,17 +1266,20 @@ def calc_sending_to_nodes_matrix(total_numbers, n_groups, some_list):
 def split_num_into_hydrologies(NumCasesExpected, nodes_to_use, use_hydrologies):
     """
         Returns a list of dict, each keyed with list 'use_hydrologies' names.
+        Returns a list of dicts (int values)
         Tries to equalize the load across number of nodes defined in 'nodes_to_use'.
     """
     mat = calc_sending_to_nodes_matrix(NumCasesExpected, nodes_to_use, use_hydrologies)
+    mat = mat.astype(int)
     out_list = []
     if nodes_to_use != mat.shape[1]:
         msg = "nodes_to_use is not same as matrix columns. Function 'calc_sending_to_nodes_matrix()' didn't work properly."
         logger.erro(msg); raise ValueError(msg)
     for j in mat.T:  # iterate over columns
         node_dict = dict()
-        for hyd_name in use_hydrologies:
-            node_dict.update({hyd_name: j.astype(int).tolist()})
+        for ind, hyd_name in enumerate(use_hydrologies):
+            node_dict.update( {hyd_name: j[ind]} )
+            # node_dict.update( {hyd_name: j.astype(int)} )
         out_list.append( node_dict )
     return out_list
 

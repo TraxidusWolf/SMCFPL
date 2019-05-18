@@ -374,6 +374,7 @@ class Simulation(object):
 
             # Interpreters the number of nodes to use
             nodes_to_use = aux_funcs.configure_input_nodes(self.UsaSlurm['NumNodes'], max_av_nodes)
+            print("nodes_to_use:", nodes_to_use)
 
             if nodes_to_use > self.NumCasesExpected:
                 # Necessary, otherwise nodes will have no work to do.
@@ -387,22 +388,26 @@ class Simulation(object):
                 logger.error(msg); raise NoNodesAvailable(msg)
 
             # (Logging only) Split cases as groups into nodes as most equal ratio possibly (across 25 nodes; 24 core each)
-            cases_per_groups = aux_funcs.calc_sending_to_nodes_matrix( self.NumCasesExpected,
-                                                                       nodes_to_use,
-                                                                       self.ListaHidrologias)
-            cases_per_groups = cases_per_groups.sum(axis=0).astype(int).tolist()  # sum cols
-            list_interpreted_msg = aux_funcs.interprete_list_of_groups(cases_per_groups)
+            mat_cases_per_groups = aux_funcs.calc_sending_to_nodes_matrix( self.NumCasesExpected,
+                                                                           nodes_to_use,
+                                                                           self.ListaHidrologias)
+            print("self.NumVecesGen:", self.NumVecesGen)
+            print("self.NumVecesDem:", self.NumVecesDem)
+            print("self.ListaHidrologias:", self.ListaHidrologias)
+            print("mat_cases_per_groups:\n", mat_cases_per_groups)
+            n_cases_per_groups = mat_cases_per_groups.sum(axis=0).astype(int).tolist()  # sum cols
+            list_interpreted_msg = aux_funcs.interprete_list_of_groups(n_cases_per_groups)
             msg = "Dividing {} cases into {}, across {} nodes...".format( self.NumCasesExpected,
                                                                           list_interpreted_msg,
                                                                           nodes_to_use)
             logger.info(msg)
 
-            # Truly divides the cases according to hydrologies. Get a list of dicts
+            # Truly divides the cases according to hydrologies. Get a list of dicts (int values)
             hydro_dict_cases_list = aux_funcs.split_num_into_hydrologies( self.NumCasesExpected,
                                                                           nodes_to_use,
                                                                           self.ListaHidrologias)
 
-            n_groups = len(cases_per_groups)  # == len(hydro_dict_cases_list)
+            n_groups = len(n_cases_per_groups)  # == len(hydro_dict_cases_list)
             n_cases = self.NumCasesExpected
             w_time = self.UsaSlurm['NodeWaittingTime']  # timeout for node response
 
@@ -417,8 +422,12 @@ class Simulation(object):
                 Pool = mu__Pool(Ncpu)
                 results = []
 
+            # initialize G and D counter per hydrology bases for groups
+            # Note: toal_G * total_D = self.NumCasesExpected * nodes_to_use = magic_num
+            nth_G_start = dict.fromkeys(self.ListaHidrologias, 0)
+            nth_D_start = dict.fromkeys(self.ListaHidrologias, 0)
             # group processing
-            iterable = enumerate(zip(cases_per_groups, hydro_dict_cases_list), start=1)
+            iterable = enumerate(zip(n_cases_per_groups, hydro_dict_cases_list), start=1)
             for nth_group, (cases_per_group, group_details) in iterable:
                 total_cases_sent += cases_per_group
                 # prepares input data for case classifier on sending. Compress data as single argument to function
@@ -427,7 +436,10 @@ class Simulation(object):
                     cases_per_group,
                     n_groups,
                     n_cases,
-                    group_details)
+                    group_details,
+                    nth_G_start,
+                    nth_D_start,
+                )
 
                 if self.UsaSlurm['NumNodes']:  # In parallel
                     results.append( Pool.apply_async(
@@ -455,13 +467,27 @@ class Simulation(object):
                     total_cases_succeded += n_cases_succeded
                     total_stages_succeded += n_stages_succeded
 
+                # Update number of generation and demand start cases group counter
+                for hid_nom in self.ListaHidrologias:  # check for every hydrology
+                    # first increase generation number before demand
+                    next_G_start = nth_G_start[hid_nom] + group_details[hid_nom]
+                    if next_G_start < self.NumVecesGen:
+                        nth_G_start[hid_nom] = next_G_start
+                    else:
+                        nth_G_start[hid_nom] = next_G_start % self.NumVecesGen
+                        nth_D_start[hid_nom] += next_G_start // self.NumVecesGen
+                # print("group_details:", group_details)
+                # print("nth_G_start:", nth_G_start)
+                # print("nth_D_start:", nth_D_start)
+                # print()
+
             if self.UsaSlurm['NumNodes']:  # En paralelo
                 # Get results from parallelism , if it exists
                 for result in results:
                     # n_cases_succeded, n_stages_succeded, n_group = result.get()
+                    result.get()
                     n_cases_succeded = 0
                     n_stages_succeded = 0
-                    result.get()
                     total_cases_succeded += n_cases_succeded
                     total_stages_succeded += n_stages_succeded
 
