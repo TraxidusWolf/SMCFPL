@@ -95,6 +95,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     # cases processing
     nth_case = (nth_group - 1) * cases_per_group + 1  # case associated with group
     for case_hid, cases_per_hid in group_details.items():
+        print("case_hid:", case_hid)
         nth_G = nth_G_start[case_hid] + 1
         nth_D = nth_D_start[case_hid] + 1
         # Note: if n_cases_per_hid == 0, this for loop is skipped
@@ -102,7 +103,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
             case_identifier = (case_hid, nth_D, nth_G)
             print("nth_case: {} == case_identifier: {}".format(nth_case, case_identifier))
             # filter database dependent on hydrology
-            DF_PE_Hid = base_BDs['BD_Hydro'][HidNom]['DF_PEsXEtapa']
+            DF_PE_Hid = base_BDs['BD_Hydro.p'][HidNom]['DF_PEsXEtapa']
             # Creates an iterator (class type with __next__ dunder) for each loop (different values)
             instance_IterDem = aux_funcs.IteratorDemand(StageIndexesList=StageIndexesList,
                                                         DF_TasaCLib=DF_TasaCLib,  # pandas DataFrame
