@@ -228,22 +228,6 @@ class Simulation(object):
         # Crea lista del tipos (Número de Unidades intrínseco) de Generación en cada Etapa/Grid
         self.DictTiposGenNoSlack = { k: d['ExtraData']['Tipos'] for k, d in self.BD_RedesXEtapa.items() }
 
-        #
-        # Creates the Demand base generator for cases
-        # self.Base_PyGeneratorDemand = aux_funcs.GeneradorDemanda(StageIndexesList=self.BD_Etapas.index.tolist(),
-        #                                                          DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
-        #                                                          DF_TasaCReg=self.BD_DemProy[['TasaCliReg']],  # pandas DataFrame
-        #                                                          DF_DesvDec=self.BD_DemProy[['Desv_decimal']],  # pandas DataFrame
-        #                                                          DictTypoCargasEta=self.DictTypoCargasEta,  # dictionary
-        #                                                          seed=self.UseRandomSeed)  # int, None
-        # Creates a hydrology databases and saves it in:
-        #    BD_Hydro = {HidNom: { 'DF_PEsXEtapa': DF_PEsXEtapa,
-        #                          'DF_ParamHidEmb_hid': DF_ParamHidEmb_hid,
-        #                          'DF_CotasEmbalsesXEtapa': DF_CotasEmbalsesXEtapa,
-        #                          'DF_CVarReservoir_hid': DF_CVarReservoir_hid,
-        #                          'DF_CostoCentrales': DF_CostoCentrales,
-        #                          'PyGeneratorDispatched': PyGeneratorDispatched},
-        #                ...}
         self.BD_Hydro = dict()
         self.BD_BaseGenDisp = dict()
         for HidNom in self.ListaHidrologias:
@@ -551,7 +535,8 @@ class Simulation(object):
                                                               ( case_num_counter, HidNom, self.BD_RedesXEtapa,
                                                                 self.BD_Etapas.index,
                                                                 self.BD_Hydro[HidNom]['DF_ParamHidEmb_hid'],
-                                                                self.BD_seriesconf,
+                                                                self.BD_Hydro[HidNom]['DF_CotasEmbalsesXEtapa'],
+                                                                self.BD_Hydro[HidNom]['DF_CostoCentrales'],
                                                                 self.BD_Hydro[HidNom]['DF_CVarReservoir_hid'],
                                                                 self.MaxNumVecesSubRedes, self.MaxItCongIntra,
                                                                 ),
@@ -568,7 +553,8 @@ class Simulation(object):
                             NumSuccededStages = core_calc.calc( case_num_counter, HidNom, self.BD_RedesXEtapa,
                                                                 self.BD_Etapas.index,
                                                                 self.BD_Hydro[HidNom]['DF_ParamHidEmb_hid'],
-                                                                self.BD_seriesconf,
+                                                                self.BD_Hydro[HidNom]['DF_CotasEmbalsesXEtapa'],
+                                                                self.BD_Hydro[HidNom]['DF_CostoCentrales'],
                                                                 self.BD_Hydro[HidNom]['DF_CVarReservoir_hid'],
                                                                 self.MaxNumVecesSubRedes, self.MaxItCongIntra,
                                                                 abs_OutFilePath= self.abs_OutFilePath,

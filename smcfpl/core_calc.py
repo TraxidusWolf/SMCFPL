@@ -99,13 +99,16 @@ def in_node_manager(group_info, base_BD_names, gral_params):
         print("case_hid:", case_hid)
         nth_G = nth_G_start[case_hid] + 1
         nth_D = nth_D_start[case_hid] + 1
+        # filter database dependent on hydrology
+        DF_PE_Hid = base_BDs['BD_Hydro.p'][case_hid]['DF_PEsXEtapa']
+        DF_ParamHidEmb_hid = base_BDs['BD_Hydro.p'][case_hid]['DF_ParamHidEmb_hid']
+        DF_CotasEmbalsesXEtapa = base_BDs['BD_Hydro.p'][case_hid]['DF_CotasEmbalsesXEtapa']
+        DF_CostoCentrales = base_BDs['BD_Hydro.p'][case_hid]['DF_CostoCentrales']
+        DF_CVarReservoir_hid = base_BDs['BD_Hydro.p'][case_hid]['DF_CVarReservoir_hid']
         # Note: if n_cases_per_hid == 0, this for loop is skipped
         for sub_nth_case in range(cases_per_hid):
             case_identifier = (case_hid, nth_D, nth_G)
             print("nth_case: {} == case_identifier: {}".format(nth_case, case_identifier))
-            # filter database dependent on hydrology
-            DF_PE_Hid = base_BDs['BD_Hydro.p'][case_hid]['DF_PEsXEtapa']
-            DF_ParamHidEmb_hid = base_BDs['BD_Hydro.p'][case_hid]['DF_ParamHidEmb_hid']
             # Creates an iterator (class type with __next__ dunder) for each loop (different values)
             instance_IterDem = aux_funcs.IteratorDemand(StageIndexesList=StageIndexesList,
                                                         DF_TasaCLib=DF_TasaCLib,  # pandas DataFrame
@@ -127,7 +130,8 @@ def in_node_manager(group_info, base_BD_names, gral_params):
                     calc,
                     (
                         nth_case, case_hid, grillas, StageIndexesList, DF_ParamHidEmb_hid,
-                        DF_seriesconf, DF_CVarReservoir_hid, MaxNumVecesSubRedes, MaxItCongIntra,
+                        DF_CotasEmbalsesXEtapa, DF_CostoCentrales, DF_CVarReservoir_hid,
+                        DF_CVarReservoir_hid, MaxNumVecesSubRedes, MaxItCongIntra,
                         # n_cases,
                         # nth_group,
                         # n_groups,
@@ -164,7 +168,8 @@ def in_node_manager(group_info, base_BD_names, gral_params):
 
 
 def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
-         DF_seriesconf, DF_CVarReservoir_hid, MaxNumVecesSubRedes, MaxItCongIntra, abs_OutFilePath='',
+         DF_CotasEmbalsesXEtapa, DF_CostoCentrales, DF_CVarReservoir_hid,
+         MaxNumVecesSubRedes, MaxItCongIntra, abs_OutFilePath='',
          DemGenerator=iter(()), DispatchGenerator=iter(()), CaseID=('hid', 0, 0),
          in_node=False):
     """
@@ -204,7 +209,6 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
 
         :param DispatchGenerator: Iterador con valores tipo: (EtaNum, pd.DataFrame.loc[EtaNum, ['type', PGen_pu']])
         :type DispatchGenerator: iterator
-
     """
     SuccededStages = 0
     RelevantData = {}
