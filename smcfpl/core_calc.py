@@ -32,6 +32,7 @@ from smcfpl.aux_funcs import setup_logger as aux_funcs__setup_logger
 from smcfpl.redispatch import redispatch as redispatch__redispatch, make_Bbus_Bpr_A as redispatch__make_Bbus_Bpr_A
 from smcfpl.redispatch import power_over_congestion as redispatch__power_over_congestion
 from smcfpl.smcfpl_exceptions import *
+import smcfpl.aux_funcs as aux_funcs
 
 import logging
 
