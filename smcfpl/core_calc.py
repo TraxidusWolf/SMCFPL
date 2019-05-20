@@ -64,6 +64,8 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     abs_path_temp = gral_params[4]
     NumVecesDem = gral_params[5]
     NumVecesGen = gral_params[6]
+    MaxNumVecesSubRedes = gral_params[7]
+    MaxItCongIntra = gral_params[8]
     # read BD files on head node
     base_BDs = dict.fromkeys(base_BD_names, None)
     for fname in base_BD_names:  # pickle assumed

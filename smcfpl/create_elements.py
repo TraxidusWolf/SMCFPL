@@ -340,6 +340,8 @@ class Simulation(object):
             #    4-abs_path_temp
             #    5-NumVecesDem
             #    6-NumVecesGen
+            #    7-MaxNumVecesSubRedes
+            #    8-MaxItCongIntra
             gral_params = [
                 self.UseRandomSeed,
                 self.DesvEstDespCenEyS,
@@ -348,6 +350,8 @@ class Simulation(object):
                 self.abs_path_temp,
                 self.NumVecesDem,
                 self.NumVecesGen,
+                self.MaxNumVecesSubRedes,
+                self.MaxItCongIntra,
             ]
 
             # find the number of available nodes ('idle' status)
