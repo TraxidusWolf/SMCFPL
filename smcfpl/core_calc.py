@@ -105,6 +105,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
             print("nth_case: {} == case_identifier: {}".format(nth_case, case_identifier))
             # filter database dependent on hydrology
             DF_PE_Hid = base_BDs['BD_Hydro.p'][case_hid]['DF_PEsXEtapa']
+            DF_ParamHidEmb_hid = base_BDs['BD_Hydro.p'][case_hid]['DF_ParamHidEmb_hid']
             # Creates an iterator (class type with __next__ dunder) for each loop (different values)
             instance_IterDem = aux_funcs.IteratorDemand(StageIndexesList=StageIndexesList,
                                                         DF_TasaCLib=DF_TasaCLib,  # pandas DataFrame
