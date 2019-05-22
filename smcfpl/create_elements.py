@@ -418,8 +418,8 @@ class Simulation(object):
                     n_groups,  # 2
                     n_cases,  # 3
                     group_details,  # 4
-                    nth_G_start,  # 5
-                    nth_D_start,  # 6
+                    nth_G_start.copy(),  # 5
+                    nth_D_start.copy(),  # 6
                 )
                 print("group_info ({}):\n{}".format(nth_group, group_info))
 
