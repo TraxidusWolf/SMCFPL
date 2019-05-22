@@ -409,7 +409,6 @@ class Simulation(object):
             # group processing
             iterable = enumerate(zip(n_cases_per_groups, hydro_dict_cases_list), start=1)
             for nth_group, (cases_per_group, group_details) in iterable:
-                print("nth_group: \n", nth_group)
                 total_cases_sent += cases_per_group
                 # prepares input data for case classifier on sending. Compress data as single argument to function
                 group_info = (
@@ -421,7 +420,6 @@ class Simulation(object):
                     nth_G_start.copy(),  # 5
                     nth_D_start.copy(),  # 6
                 )
-                print("group_info ({}):\n{}".format(nth_group, group_info))
 
                 if self.UsaSlurm['NumNodes']:  # In parallel
                     results.append( Pool.apply_async(
@@ -463,7 +461,6 @@ class Simulation(object):
                         else:
                             break
 
-            print()
             if self.UsaSlurm['NumNodes']:  # En paralelo
                 # Get results from parallelism , if it exists
                 for result in results:

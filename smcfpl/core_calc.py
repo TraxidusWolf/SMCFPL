@@ -153,9 +153,9 @@ def in_node_manager(group_info, base_BD_names, gral_params):
             # increments each G per case. If maxed increment D once and reset G counter
             if nth_G <= NumVecesGen:
                 nth_G += 1
-                if nth_D <= NumVecesDem:
-                    nth_D += 1
-                    nth_G = 0
+            else:
+                nth_D += 1
+                nth_G = 1
 
     # fetch parallel status info
     # for result in results:

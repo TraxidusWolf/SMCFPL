@@ -41,12 +41,11 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     python_cmd += 'in_node_manager({args})"'
     python_cmd = python_cmd.format(args=','.join(Args))
 
-    msg = "RUN Command:\n{}".format(python_cmd)
     # msg = "RUN Command:\n{}".format(sbatch_cmd + python_cmd)
     # lunch full sbatch script to node
     sbatch_cmd = sl__split(sbatch_cmd) + [python_cmd]
     output_cmd = sp__run(sbatch_cmd, shell=False, stdout=sp__PIPE, stderr=sp__PIPE)
-    logger.debug(msg)
+    # logger.debug(msg)
 
     # fetch job number
     job_id = output_cmd.stdout.decode('utf-8')
