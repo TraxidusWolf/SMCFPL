@@ -101,7 +101,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
         print("case_hid:", case_hid)
         nth_G = nth_G_start[case_hid]
         nth_D = nth_D_start[case_hid]
-        nth_case = nth_D**2 + nth_G - 1
+        nth_case = (nth_D - 1) * NumVecesGen + nth_G  # matrix mapping to 1-D
         # filter database dependent on hydrology
         DF_PE_Hid = base_BDs['BD_Hydro.p'][case_hid]['DF_PEsXEtapa']
         DF_ParamHidEmb_hid = base_BDs['BD_Hydro.p'][case_hid]['DF_ParamHidEmb_hid']
