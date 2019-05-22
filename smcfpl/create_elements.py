@@ -410,8 +410,6 @@ class Simulation(object):
             iterable = enumerate(zip(n_cases_per_groups, hydro_dict_cases_list), start=1)
             for nth_group, (cases_per_group, group_details) in iterable:
                 print("nth_group: \n", nth_group)
-                print("cases_per_group: \n", cases_per_group)
-                print("group_details: \n", group_details)
                 total_cases_sent += cases_per_group
                 # prepares input data for case classifier on sending. Compress data as single argument to function
                 group_info = (
@@ -459,8 +457,13 @@ class Simulation(object):
                         nth_G_start[hid_nom] = next_G_start
                     else:
                         nth_G_start[hid_nom] = next_G_start % self.NumVecesGen
-                        nth_D_start[hid_nom] += next_G_start // self.NumVecesGen
+                        next_D_start = nth_D_start[hid_nom] + next_G_start // self.NumVecesGen
+                        if next_D_start <= self.NumVecesDem:
+                            nth_D_start[hid_nom] = next_D_start
+                        else:
+                            break
 
+            print()
             if self.UsaSlurm['NumNodes']:  # En paralelo
                 # Get results from parallelism , if it exists
                 for result in results:
