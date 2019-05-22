@@ -16,6 +16,7 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     Passes almost all arguments to manage function via sbatch script.
     w_time (waitting time) per node bases.
     """
+    print("group_info:\n", group_info)
     job_name = Instance.simulation_name
     working_dir = Instance.Working_dir
 

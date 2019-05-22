@@ -1,4 +1,4 @@
-__version__ = '0.1.3.24'
+__version__ = '0.1.3.25'
 """
     Main init file for SMCFPL model.
     Version control: 'mayor'.'minor'.'build number'.'revision'

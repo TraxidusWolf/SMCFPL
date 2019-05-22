@@ -409,6 +409,9 @@ class Simulation(object):
             # group processing
             iterable = enumerate(zip(n_cases_per_groups, hydro_dict_cases_list), start=1)
             for nth_group, (cases_per_group, group_details) in iterable:
+                print("nth_group: \n", nth_group)
+                print("cases_per_group: \n", cases_per_group)
+                print("group_details: \n", group_details)
                 total_cases_sent += cases_per_group
                 # prepares input data for case classifier on sending. Compress data as single argument to function
                 group_info = (
