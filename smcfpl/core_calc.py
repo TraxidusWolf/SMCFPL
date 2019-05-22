@@ -56,8 +56,6 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     group_details = group_info[4]
     nth_G_start = group_info[5]  # 1-indexed
     nth_D_start = group_info[6]  # 1-indexed
-    print("nth_G_start:", nth_G_start)
-    print("nth_D_start:", nth_D_start)
     # get some simulation parameters. Useful for every simulation. (came from self)
     random_seed = gral_params[0]
     DesvEstDespCenEyS = gral_params[1]
@@ -98,11 +96,12 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     Pool = mu__Pool(n_cpu)
     results = []
     # cases processing
-    nth_case = (nth_group - 1) * cases_per_group + 1  # case associated with group
+    # nth_case = (nth_group - 1) * cases_per_group + 1  # case associated with group
     for case_hid, cases_per_hid in group_details.items():
         print("case_hid:", case_hid)
         nth_G = nth_G_start[case_hid]
         nth_D = nth_D_start[case_hid]
+        nth_case = nth_D**2 + nth_G - 1
         # filter database dependent on hydrology
         DF_PE_Hid = base_BDs['BD_Hydro.p'][case_hid]['DF_PEsXEtapa']
         DF_ParamHidEmb_hid = base_BDs['BD_Hydro.p'][case_hid]['DF_ParamHidEmb_hid']
@@ -112,7 +111,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
         # Note: if n_cases_per_hid == 0, this for loop is skipped
         for sub_nth_case in range(cases_per_hid):
             case_identifier = (case_hid, nth_D, nth_G)
-            print("nth_case: {} == case_identifier: {}".format(nth_case, case_identifier))
+            print("nth_case: {} - case_identifier: {} - cases_per_group: {}".format(nth_case, case_identifier, cases_per_group))
             # Creates an iterator (class type with __next__ dunder) for each loop (different values)
             instance_IterDem = aux_funcs.IteratorDemand(StageIndexesList=StageIndexesList,
                                                         DF_TasaCLib=DF_TasaCLib,  # pandas DataFrame
@@ -164,7 +163,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     #     print(msg)
     msg = "Finished in_node_manager() for group {}/{} ({}/{}).".format( nth_group,
                                                                         n_groups,
-                                                                        cases_per_group,
+                                                                        nth_case,
                                                                         n_cases)
     logger.info(msg)
 

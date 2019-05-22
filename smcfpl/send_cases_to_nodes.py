@@ -16,6 +16,7 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     Passes almost all arguments to manage function via sbatch script.
     w_time (waitting time) per node bases.
     """
+    nth_group = group_info[0]
     print("(send_work) group_info:\n", group_info)
     job_name = Instance.simulation_name
     working_dir = Instance.Working_dir
@@ -67,7 +68,7 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     time.sleep(0.7)  # it's to fast. Wait for job allocation
     nodenom_cmd = """squeue --jobs={} --format="%N" --noheader""".format(job_id)
     node_name = sp__run(sl__split(nodenom_cmd), shell=False, stdout=sp__PIPE).stdout.decode().rstrip('\n')
-    msg = "Waiting response from Node {}: ...".format(node_name)
+    msg = "Waiting response for group {} (from Node: {}) ...".format(nth_group, node_name)
     logger.info(msg)
 
     # waits for output file to appear (up to waiting_time; w_time). Checks directory every some seconds for the files.
