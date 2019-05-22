@@ -404,21 +404,21 @@ class Simulation(object):
 
             # initialize G and D counter per hydrology bases for groups
             # Note: toal_G * total_D = self.NumCasesExpected * nodes_to_use = magic_num
-            nth_G_start = dict.fromkeys(self.ListaHidrologias, 0)
-            nth_D_start = dict.fromkeys(self.ListaHidrologias, 0)
+            nth_G_start = dict.fromkeys(self.ListaHidrologias, 1)
+            nth_D_start = dict.fromkeys(self.ListaHidrologias, 1)
             # group processing
             iterable = enumerate(zip(n_cases_per_groups, hydro_dict_cases_list), start=1)
             for nth_group, (cases_per_group, group_details) in iterable:
                 total_cases_sent += cases_per_group
                 # prepares input data for case classifier on sending. Compress data as single argument to function
                 group_info = (
-                    nth_group,
-                    cases_per_group,
-                    n_groups,
-                    n_cases,
-                    group_details,
-                    nth_G_start,
-                    nth_D_start,
+                    nth_group,  # 0
+                    cases_per_group,  # 1
+                    n_groups,  # 2
+                    n_cases,  # 3
+                    group_details,  # 4
+                    nth_G_start,  # 5
+                    nth_D_start,  # 6
                 )
                 print("group_info ({}):\n{}".format(nth_group, group_info))
 
@@ -452,7 +452,7 @@ class Simulation(object):
                 for hid_nom in self.ListaHidrologias:  # check for every hydrology
                     # first increase generation number before demand
                     next_G_start = nth_G_start[hid_nom] + group_details[hid_nom]
-                    if next_G_start < self.NumVecesGen:
+                    if next_G_start <= self.NumVecesGen:
                         nth_G_start[hid_nom] = next_G_start
                     else:
                         nth_G_start[hid_nom] = next_G_start % self.NumVecesGen

@@ -54,8 +54,10 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     n_groups = group_info[2]
     n_cases = group_info[3]
     group_details = group_info[4]
-    nth_G_start = group_info[5]  # 0-indexed
-    nth_D_start = group_info[6]  # 0-indexed
+    nth_G_start = group_info[5]  # 1-indexed
+    nth_D_start = group_info[6]  # 1-indexed
+    print("nth_G_start:", nth_G_start)
+    print("nth_D_start:", nth_D_start)
     # get some simulation parameters. Useful for every simulation. (came from self)
     random_seed = gral_params[0]
     DesvEstDespCenEyS = gral_params[1]
@@ -99,8 +101,8 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     nth_case = (nth_group - 1) * cases_per_group + 1  # case associated with group
     for case_hid, cases_per_hid in group_details.items():
         print("case_hid:", case_hid)
-        nth_G = nth_G_start[case_hid] + 1
-        nth_D = nth_D_start[case_hid] + 1
+        nth_G = nth_G_start[case_hid]
+        nth_D = nth_D_start[case_hid]
         # filter database dependent on hydrology
         DF_PE_Hid = base_BDs['BD_Hydro.p'][case_hid]['DF_PEsXEtapa']
         DF_ParamHidEmb_hid = base_BDs['BD_Hydro.p'][case_hid]['DF_ParamHidEmb_hid']
@@ -149,9 +151,9 @@ def in_node_manager(group_info, base_BD_names, gral_params):
             )
             nth_case += 1
             # increments each G per case. If maxed increment D once and reset G counter
-            if nth_G < NumVecesGen:
+            if nth_G <= NumVecesGen:
                 nth_G += 1
-                if nth_D < NumVecesDem:
+                if nth_D <= NumVecesDem:
                     nth_D += 1
                     nth_G = 0
 
