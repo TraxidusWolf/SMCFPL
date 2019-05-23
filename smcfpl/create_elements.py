@@ -377,9 +377,9 @@ class Simulation(object):
                                                                            self.ListaHidrologias)
             n_cases_per_groups = mat_cases_per_groups.sum(axis=0).astype(int).tolist()  # sum cols
             list_interpreted_msg = aux_funcs.interprete_list_of_groups(n_cases_per_groups)
-            msg = "Dividing {} cases into {}, across {} nodes...".format( self.NumCasesExpected,
-                                                                          list_interpreted_msg,
-                                                                          nodes_to_use)
+            msg = "Dividing {} cases into: {}, across {} nodes...".format( self.NumCasesExpected,
+                                                                           list_interpreted_msg,
+                                                                           nodes_to_use)
             logger.info(msg)
 
             # Truly divides the cases according to hydrologies. Get a list of dicts (int values)
