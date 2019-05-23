@@ -48,6 +48,9 @@ def in_node_manager(group_info, base_BD_names, gral_params):
         to run parallel case as much cores are available,
         that is, run core_calc.calc() in parallel.
     """
+    # initialize cases status dict
+    id_cases_dict = dict()
+    total_sucedded_stages = 0
     # get the group_info (tuple)
     nth_group = group_info[0]
     cases_per_group = group_info[1]
@@ -57,7 +60,6 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     nth_G_start = group_info[5]  # 1-indexed
     nth_D_start = group_info[6]  # 1-indexed
     nth_case_prev = group_info[7]
-    n_hid = len(group_details)
     # get some simulation parameters. Useful for every simulation. (came from self)
     random_seed = gral_params[0]
     DesvEstDespCenEyS = gral_params[1]
@@ -99,13 +101,10 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     results = []
     # cases processing
     nth_case = nth_case_prev + 1
-    # nth_case = (nth_group - 1) * cases_per_group + 1  # case associated with group
     for nth_H, (case_hid, cases_per_hid) in enumerate(group_details.items(), start=1):
-        print("case_hid:", case_hid)
+        # print("case_hid:", case_hid)
         nth_G = nth_G_start[case_hid]
         nth_D = nth_D_start[case_hid]
-        # nth_case_start = NumVecesGen * n_hid * (nth_D - 1) + n_hid * (nth_G - 1) + nth_H  # 3D matrix mapping to 1-D
-        # n_cases_prev += cases_per_hid
         # filter database dependent on hydrology
         DF_PE_Hid = base_BDs['BD_Hydro.p'][case_hid]['DF_PEsXEtapa']
         DF_ParamHidEmb_hid = base_BDs['BD_Hydro.p'][case_hid]['DF_ParamHidEmb_hid']
@@ -115,7 +114,8 @@ def in_node_manager(group_info, base_BD_names, gral_params):
         # Note: if n_cases_per_hid == 0, this for loop is skipped
         for sub_nth_case in range(cases_per_hid):
             case_identifier = (case_hid, nth_D, nth_G)
-            print("nth_case: {} - case_identifier: {} - cases_per_group: {}".format(nth_case, case_identifier, cases_per_group))
+            id_cases_dict[case_identifier] = None
+            # print("nth_case: {} - case_identifier: {} - cases_per_group: {}".format(nth_case, case_identifier, cases_per_group))
             # Creates an iterator (class type with __next__ dunder) for each loop (different values)
             instance_IterDem = aux_funcs.IteratorDemand(StageIndexesList=StageIndexesList,
                                                         DF_TasaCLib=DF_TasaCLib,  # pandas DataFrame
@@ -160,16 +160,17 @@ def in_node_manager(group_info, base_BD_names, gral_params):
                 nth_D += 1
                 nth_G = 1
     # fetch parallel status info
-    # for result in results:
-    #     res = result.get()
-    #     msg = res[2]
-    #     print(msg)
-    msg = "Finished in_node_manager() for group {}/{} ({}/{}).".format( nth_group,
-                                                                        n_groups,
-                                                                        nth_case,
-                                                                        n_cases)
+    for result in results:
+        res = result.get()
+        CaseID, succeded_stages_of_case = res
+        # updates cases id status
+        id_cases_dict[CaseID] = succeded_stages_of_case
+    msg = "Finished in_node_manager() for group {}/{} ({}/{}). Sucedded: {}".format( nth_group,
+                                                                                     n_groups,
+                                                                                     nth_case,
+                                                                                     n_cases,
+                                                                                     total_sucedded_stages)
     logger.info(msg)
-
     return
 
 
@@ -218,7 +219,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
     """
     SuccededStages = 0
     RelevantData = {}
-    print("Hidrology:", Hidrology)
+    print("Hidrology:", Hidrology, "; CaseID: ", CaseID)
     # for each stage in the case
     for (StageNum, DF_Dem), (StageNum, DF_Gen) in zip(DemGenerator, DispatchGenerator):
         print("StageNum:", StageNum, "CaseNum:", CaseNum)
@@ -257,7 +258,11 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         except Exception as e:
             print("Something else happened during rundcpp() ...")
             print(e)
-            import pdb; pdb.set_trace()  # breakpoint 4c98318c //
+            #########################################################
+            #########################################################
+            exit()
+            #########################################################
+            #########################################################
             continue
         else:  # excecute when not exception
             msg = "LPF ran on Grid for stage {}/{} in case {}."
@@ -401,7 +406,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
     print("----------------------------")
     if RelevantData:  # if it's not empty
         write_values_and_finish(in_node, RelevantData, CaseNum, CaseID, outputDir=abs_OutFilePath)
-    return SuccededStages
+    return (CaseID, SuccededStages)
 
 
 """

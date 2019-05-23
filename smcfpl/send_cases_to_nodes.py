@@ -17,7 +17,6 @@ def send_work(Instance, group_info, base_BDs_names, gral_params, w_time):
     w_time (waitting time) per node bases.
     """
     nth_group = group_info[0]
-    print("(send_work) group_info:\n", group_info)
     job_name = Instance.simulation_name
     working_dir = Instance.Working_dir
 
