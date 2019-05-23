@@ -406,6 +406,7 @@ class Simulation(object):
             # Note: toal_G * total_D = self.NumCasesExpected * nodes_to_use = magic_num
             nth_G_start = dict.fromkeys(self.ListaHidrologias, 1)
             nth_D_start = dict.fromkeys(self.ListaHidrologias, 1)
+            nth_case_prev = 0
             # group processing
             iterable = enumerate(zip(n_cases_per_groups, hydro_dict_cases_list), start=1)
             for nth_group, (cases_per_group, group_details) in iterable:
@@ -419,6 +420,7 @@ class Simulation(object):
                     group_details,  # 4
                     nth_G_start.copy(),  # 5
                     nth_D_start.copy(),  # 6
+                    nth_case_prev,  # 7
                 )
 
                 if self.UsaSlurm['NumNodes']:  # In parallel
@@ -460,6 +462,7 @@ class Simulation(object):
                             nth_D_start[hid_nom] = next_D_start
                         else:
                             break
+                nth_case_prev += cases_per_group
 
             if self.UsaSlurm['NumNodes']:  # En paralelo
                 # Get results from parallelism , if it exists
