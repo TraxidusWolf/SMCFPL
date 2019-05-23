@@ -560,25 +560,25 @@ class Simulation(object):
                                             )
                         else:
                             # (En serie) Aplica directamente para cada caso
-                            NumSuccededStages = core_calc.calc( case_num_counter, HidNom, self.BD_RedesXEtapa,
-                                                                self.BD_Etapas.index,
-                                                                self.BD_Hydro[HidNom]['DF_ParamHidEmb_hid'],
-                                                                self.BD_Hydro[HidNom]['DF_CotasEmbalsesXEtapa'],
-                                                                self.BD_Hydro[HidNom]['DF_CostoCentrales'],
-                                                                self.BD_Hydro[HidNom]['DF_CVarReservoir_hid'],
-                                                                self.MaxNumVecesSubRedes, self.MaxItCongIntra,
-                                                                abs_OutFilePath= self.abs_OutFilePath,
-                                                                DemGenerator=instance_IterDem,
-                                                                DispatchGenerator=instance_IterDispatched,
-                                                                in_node=False, CaseID=case_identifier,
-                                                                )
+                            CaseID, NumSuccededStages = core_calc.calc( case_num_counter, HidNom, self.BD_RedesXEtapa,
+                                                                        self.BD_Etapas.index,
+                                                                        self.BD_Hydro[HidNom]['DF_ParamHidEmb_hid'],
+                                                                        self.BD_Hydro[HidNom]['DF_CotasEmbalsesXEtapa'],
+                                                                        self.BD_Hydro[HidNom]['DF_CostoCentrales'],
+                                                                        self.BD_Hydro[HidNom]['DF_CVarReservoir_hid'],
+                                                                        self.MaxNumVecesSubRedes, self.MaxItCongIntra,
+                                                                        abs_OutFilePath= self.abs_OutFilePath,
+                                                                        DemGenerator=instance_IterDem,
+                                                                        DispatchGenerator=instance_IterDispatched,
+                                                                        in_node=False, CaseID=case_identifier,
+                                                                        )
                             total_stages_succeded += NumSuccededStages
 
             if self.NumParallelCPU:  # En paralelo
                 logger.info("Executing paralelism calculations on power system cases...")
                 # Obtiene los resultados del paralelismo, en caso de existir
                 for result in Results:
-                    NumSuccededStages = result.get()
+                    CaseID, NumSuccededStages = result.get()
                     total_cases_succeded += NumSuccededStages
 
         #

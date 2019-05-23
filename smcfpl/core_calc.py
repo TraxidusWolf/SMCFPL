@@ -70,6 +70,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     NumVecesGen = gral_params[6]
     MaxNumVecesSubRedes = gral_params[7]
     MaxItCongIntra = gral_params[8]
+    print("abs_OutFilePath({}): {}".format(nth_group, abs_OutFilePath))
     # read BD files on head node
     base_BDs = dict.fromkeys(base_BD_names, None)
     for fname in base_BD_names:  # pickle assumed
@@ -138,10 +139,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
                     (
                         nth_case, case_hid, grillas, StageIndexesList, DF_ParamHidEmb_hid,
                         DF_CotasEmbalsesXEtapa, DF_CostoCentrales, DF_CVarReservoir_hid,
-                        DF_CVarReservoir_hid, MaxNumVecesSubRedes, MaxItCongIntra,
-                        # n_cases,
-                        # nth_group,
-                        # n_groups,
+                        MaxNumVecesSubRedes, MaxItCongIntra,
                     ),
                     {
                         'abs_OutFilePath': abs_OutFilePath,
@@ -161,8 +159,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
                 nth_G = 1
     # fetch parallel status info
     for result in results:
-        res = result.get()
-        CaseID, succeded_stages_of_case = res
+        CaseID, succeded_stages_of_case = result.get()
         # updates cases id status
         id_cases_dict[CaseID] = succeded_stages_of_case
     msg = "Finished in_node_manager() for group {}/{} ({}/{}). Sucedded: {}".format( nth_group,
@@ -176,7 +173,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
 
 def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
          DF_CotasEmbalsesXEtapa, DF_CostoCentrales, DF_CVarReservoir_hid,
-         MaxNumVecesSubRedes, MaxItCongIntra, abs_OutFilePath='',
+         MaxNumVecesSubRedes, MaxItCongIntra, abs_OutFilePath='.',
          DemGenerator=iter(()), DispatchGenerator=iter(()), CaseID=('hid', 0, 0),
          in_node=False):
     """
@@ -219,7 +216,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
     """
     SuccededStages = 0
     RelevantData = {}
-    print("Hidrology:", Hidrology, "; CaseID: ", CaseID, abs_OutFilePath)
+    print("Hidrology:", Hidrology, "; CaseID: ", CaseID)
     # for each stage in the case
     for (StageNum, DF_Dem), (StageNum, DF_Gen) in zip(DemGenerator, DispatchGenerator):
         print("StageNum:", StageNum, "CaseNum:", CaseNum)
