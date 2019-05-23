@@ -70,7 +70,6 @@ def in_node_manager(group_info, base_BD_names, gral_params):
     NumVecesGen = gral_params[6]
     MaxNumVecesSubRedes = gral_params[7]
     MaxItCongIntra = gral_params[8]
-    print("abs_OutFilePath({}): {}".format(nth_group, abs_OutFilePath))
     # read BD files on head node
     base_BDs = dict.fromkeys(base_BD_names, None)
     for fname in base_BD_names:  # pickle assumed
@@ -173,7 +172,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
 
 def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
          DF_CotasEmbalsesXEtapa, DF_CostoCentrales, DF_CVarReservoir_hid,
-         MaxNumVecesSubRedes, MaxItCongIntra, abs_OutFilePath='.',
+         MaxNumVecesSubRedes, MaxItCongIntra, abs_OutFilePath='',
          DemGenerator=iter(()), DispatchGenerator=iter(()), CaseID=('hid', 0, 0),
          in_node=False):
     """
@@ -402,7 +401,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
     print("Este fue CaseNum:", CaseNum)
     print("----------------------------")
     if RelevantData:  # if it's not empty
-        write_values_and_finish(in_node, RelevantData, CaseNum, CaseID, outputDir=abs_OutFilePath)
+        write_values_and_finish(RelevantData, CaseNum, CaseID, outputDir=abs_OutFilePath)
     return (CaseID, SuccededStages)
 
 
@@ -785,9 +784,6 @@ def estimates_power_losses(net, method='linear'):
         raise ValueError(msg)
 
 
-def write_values_and_finish(in_node, RelevantData, CaseNum, CaseID, outputDir='.'):
+def write_values_and_finish(RelevantData, CaseNum, CaseID, outputDir='.'):
     print("------------------\n Escribiendo archivo salida \n------------------")
-    if in_node:
-        smcfpl__in_out_proc__write_output_case(RelevantData, CaseNum, CaseID, pathto='.')  # re-check
-    else:
-        smcfpl__in_out_proc__write_output_case(RelevantData, CaseNum, CaseID, pathto=outputDir)
+    smcfpl__in_out_proc__write_output_case(RelevantData, CaseNum, CaseID, pathto=outputDir)
