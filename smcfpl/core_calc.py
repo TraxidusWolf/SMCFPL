@@ -219,7 +219,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
     """
     SuccededStages = 0
     RelevantData = {}
-    print("Hidrology:", Hidrology, "; CaseID: ", CaseID)
+    print("Hidrology:", Hidrology, "; CaseID: ", CaseID, abs_OutFilePath)
     # for each stage in the case
     for (StageNum, DF_Dem), (StageNum, DF_Gen) in zip(DemGenerator, DispatchGenerator):
         print("StageNum:", StageNum, "CaseNum:", CaseNum)
