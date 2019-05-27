@@ -70,6 +70,12 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
         Example:
             redispatch(Grid, 'line', 0, max_load_percent = 2.8)
     """
+    # verifies argument types
+    if not isinstance(BranchIndTable, (int, uint8, uint32, uint64, int8, int32, int64)):
+        msg = "BranchIndTable bus be an integer."
+        logger.error(msg)
+        raise ValueError(msg)
+
     # checks if power flow was executed in Grid. Otherwise runs LPF
     if not Grid.converged:
         msg = "Network had no power flow calculations... Calculating within 'redispatch()'."
@@ -105,14 +111,13 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
     # print("IndGenRef_GBusMat:", IndGenRef_GBusMat)
     # print("FUPTG_GenGridNonERNCIndx:", FUPTG_GenGridNonERNCIndx)
     # print("FUPTG_GenGridIndices:", FUPTG_GenGridIndices)
-    # print("RowValues:", RowValues)
+    print("RowValues:", RowValues)
 
     # calcula la potencia sobrante
     OverloadP_kW, loading_percent = power_over_congestion( Grid,
                                                            TypeElmnt,
                                                            BranchIndTable,
-                                                           max_load_percent,
-                                                           IncreaseFlow=0.12)
+                                                           max_load_percent)
     print("OverloadP_kW:", OverloadP_kW)
     print("loading_percent:", loading_percent)
     if (OverloadP_kW <= 0) :  # & (loading_percent < max_load_percent) ?
@@ -123,18 +128,19 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
 
     # normalization about sumation of absolute values
     RowValuesNorm = RowValues / abs(RowValues).sum()  # abs(RowValuesNorm).sum() == 1
-    # print("RowValuesNorm:", RowValuesNorm)
+    print("RowValuesNorm:", RowValuesNorm)
 
     # creates vector of new power value expected to generators
     Power2Change_kW = -RowValuesNorm[FUPTG_GenGridNonERNCIndx] * OverloadP_kW
+    print("Power2Change_kW:", Power2Change_kW)
 
-    # Finds the limits and actual power
+    # Finds the limits and actual power for units
     MaxGen_kW = abs(Grid['gen'].loc[NonERNCIndx_GenFUPTG, 'max_p_kw'].values)
     MinGen_kW = abs(Grid['gen'].loc[NonERNCIndx_GenFUPTG, 'min_p_kw'].values)
     ActualGen_kW = abs(Grid['res_gen'].loc[NonERNCIndx_GenFUPTG, 'p_kw'].values)
-    # print("MaxGen_kW:", MaxGen_kW)
-    # print("MinGen_kW:", MinGen_kW)
-    # print("ActualGen_kW:", ActualGen_kW)
+    print("MaxGen_kW:", MaxGen_kW)
+    print("MinGen_kW:", MinGen_kW)
+    print("ActualGen_kW:", ActualGen_kW)
 
     # Calculates new power to dispatch
     NewPower_kW = ActualGen_kW + Power2Change_kW
@@ -143,13 +149,13 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
     PossibleRedispath = True
     # MoreGenerationPossible = LessGenerationPossible = True
     while PossibleRedispath:
-        """ Loop requiered when maximun or minimum power of units are reached.
-            Three possible exit condictions:
+        """ Loop required when maximum or minimum power of units are reached.
+            Three possible exit conditions:
             1.- Not enough generation available to redispatch at maximum power.
             2.- Not enough generation available to redispatch at minimum power.
             3.- Redispatch worked successfully.
 
-            In order to each, it's requiered:
+            In order to each, it's required:
                 1.- AvailablePower2Increase.sum() < 0: NewPower expected to dispatch is greater than MaxPower
                 2.- AvailablePower2Decrease.sum() < 0: NewPower expected to dispatch is smaller than MinPower
                 3.- (not SomeGenOverloaded) and (not SomeGenUnderloaded): No generation limits were reached
@@ -215,6 +221,7 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
             # Exit condition for redispatch complete
             print("Exit condition for redispatch complete")
             break
+        import pdb; pdb.set_trace()  # breakpoint 44f1fdce //
 
     if not PossibleRedispath:
         msg = "Not enough power available on generators to stop 'inter-congestion'."
@@ -534,7 +541,7 @@ def sum_rows(A, rows = 'all'):
     return A * Aux
 
 
-def power_over_congestion(Grid, TypeElmnt, BranchIndTable, max_load_percent, IncreaseFlow = 0.12):
+def power_over_congestion(Grid, TypeElmnt, BranchIndTable, max_load_percent):
     """
         Calculates delta power over from max power expected under the max_load_percent.
         Increases OverloadP_kW in 12% over max power branch limit.
@@ -551,9 +558,7 @@ def power_over_congestion(Grid, TypeElmnt, BranchIndTable, max_load_percent, Inc
     # FLUJO DE LINEA CAMBIA SIGNO. Absolute values required
     loading_percent = Grid['res_' + TypeElmnt].at[BranchIndTable, 'loading_percent']
     FluPAB_kW = abs(Grid['res_' + TypeElmnt].at[BranchIndTable, ColName])  # da igual dirección (signo)
-    MaxFluP_kW = FluPAB_kW * max_load_percent / loading_percent  # >= 0
-    OverloadP_kW = FluPAB_kW - MaxFluP_kW
-    OverloadP_kW += MaxFluP_kW * IncreaseFlow  # increases OverloadP_kW by 1+IncreaseFlow, compensate fpl error
+    OverloadP_kW = FluPAB_kW * (1 - max_load_percent / loading_percent)  # >= 0
     return OverloadP_kW, loading_percent
 
 

@@ -32,12 +32,12 @@ Sim = smcfpl.Simulation(
     PEHidHum = 0.2,  # 0 <= (float) <= 1
     DesvEstDespCenEyS = 0.1,  # desviación estándar considerada para el despacho de centrales Embalse y Serie
     DesvEstDespCenP = 0.2,  # desviación estándar considerada para el despacho de centrales Pasada
-    # NumParallelCPU = None,  # Puede ser None: No usa paralelismo en escritura ni lectura ni cálculo, 'Max' para
-    NumParallelCPU = 'Max',  # Puede ser False: No usa paralelismo en escritura ni lectura ni cálculo, 'Max' para
+    NumParallelCPU = None,  # Puede ser None: No usa paralelismo en escritura ni lectura ni cálculo, 'Max' para
+    # NumParallelCPU = 'Max',  # Puede ser False: No usa paralelismo en escritura ni lectura ni cálculo, 'Max' para
     # utilizar todos lo procesadores fisicos, o un integer para modificar el tamaño de la pool. No posee efecto directo
     # en Node Mode.
-    # UsaSlurm=False,
-    UsaSlurm = dict(NumNodes=None, NodeWaittingTime=dt.timedelta(minutes=5)),  # keys must exists
+    UsaSlurm=False,
+    # UsaSlurm = dict(NumNodes=None, NodeWaittingTime=dt.timedelta(minutes=5)),  # keys must exists
     # UsaSlurm = dict(NumNodes=2, NodeWaittingTime=dt.timedelta(minutes=5)),  # keys must exists
     # UsaSlurm = dict(NumNodes='Max', NodeWaittingTime=dt.timedelta(minutes=5)),  # keys must exists
     # NumNodos es igual que NumParallelCPU (None, int, 'Max'), este último se usa dentro de nodos cuando está activado Slurm.

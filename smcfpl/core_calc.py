@@ -20,7 +20,7 @@ from pandapower.powerflow import LoadflowNotConverged
 from pandas import DataFrame as pd__DataFrame
 from pandas import concat as pd__concat
 from numpy import cos as np__cos, real as np__real, sign as np__sign
-from numpy import isnan as np__isnan, seterr as np__seterr
+from numpy import isnan as np__isnan, seterr as np__seterr, array as np__array
 from scipy.sparse import linalg
 from pickle import load as pickle__load
 from multiprocessing import cpu_count as mu__cpu_count, Pool as mu__Pool
@@ -145,7 +145,6 @@ def in_node_manager(group_info, base_BD_names, gral_params):
                         'DemGenerator': instance_IterDem,
                         'DispatchGenerator': instance_IterDispatched,
                         'CaseID': case_identifier,
-                        'in_node': True,
                     }
                 )
             )
@@ -173,8 +172,7 @@ def in_node_manager(group_info, base_BD_names, gral_params):
 def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
          DF_CotasEmbalsesXEtapa, DF_CostoCentrales, DF_CVarReservoir_hid,
          MaxNumVecesSubRedes, MaxItCongIntra, abs_OutFilePath='',
-         DemGenerator=iter(()), DispatchGenerator=iter(()), CaseID=('hid', 0, 0),
-         in_node=False):
+         DemGenerator=iter(()), DispatchGenerator=iter(()), CaseID=('hid', 0, 0) ):
     """
         Función base de cálculo para la resolución del modelo SMCFPL. Por cada etapa obtiene los valores
         de los generadores de demanda y generación para los elementos de la Grilla de la etapa ocurrente.
@@ -185,8 +183,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         :param Hidrology: Nombre de la hidrología actual
         :type Hidrology: string
 
-        :param Grillas: Dict of pandaNetworks and extradata if 'in_node' == False. Dict of pandaNetworks if 'in_node' == True.
-                        Indexed by Stage numbers.
+        :param Grillas: Dict of pandaNetworks and extradata. Indexed by Stage numbers.
         :type Grillas: Diccionario
 
         :param StageIndexesList: Indices de las etapas
@@ -204,9 +201,6 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
                               de costo predefinida para relacionar cota - cvar ('FuncCosto').
         :type DF_seriesconf: nombre del pandas DataFrame
 
-        :param in_node: Verdadero indica que es ejecutado en nodo. Valores son retornados en archivo.
-        :type in_node: bool
-
         :param DemGenerator: Iterador con valores tipo: (EtaNum, pd.DataFrame.loc[EtaNum, 'PDem_pu'])
         :type DemGenerator: iterator
 
@@ -219,12 +213,43 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
     # for each stage in the case
     for (StageNum, DF_Dem), (StageNum, DF_Gen) in zip(DemGenerator, DispatchGenerator):
         print("StageNum:", StageNum, "CaseNum:", CaseNum)
-        # Load Data from every stage when 'in_node' is True
-        Grid, Dict_ExtraData = UpdateGridPowers( Grillas, StageNum,
-                                                 DF_Dem, DF_Gen)
-
+        # Grid, Dict_ExtraData = UpdateGridPowers( Grillas, StageNum,
+        #                                          DF_Dem, DF_Gen)
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        # dont update with variable generation and demand values
+        Grid, Dict_ExtraData = Grillas[StageNum]['PandaPowerNet'], Grillas[StageNum]['ExtraData']
+        # Temporary new dispatch for single intra congestion
+        Grid.gen.p_kw = np__array([500, 650, 632, 254, 680, 595, 540, 830, 250, 500]) * -10**3  # G 02 is ref
+        print(Grid.gen)
+        print(pd__concat(
+            [
+                Grid.ext_grid,
+                Dict_ExtraData['TecGenSlack'].reset_index(drop=True)
+            ], axis='columns'))
+        # exit()
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
+        ####################################################################################
         #
-        # Verifica que el balance de potencia es posible en la etapa del caso (Gen-Dem)
+        # Verifica si el balance de potencia es posible en la etapa del caso (Gen-Dem)
         try:
             # Corrobora factibilidad del despacho uninodal
             Power_available_after_dispatch(Grid)
@@ -256,7 +281,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             print(e)
             #########################################################
             #########################################################
-            exit()
+            exit()  # to check what happens
             #########################################################
             #########################################################
             continue
@@ -286,24 +311,29 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             logger.error(msg)
             continue
 
+        # updates CVar of 'Series' and 'Embalse' units (TODO: whether they are or not reference)
+        update_resevoirs_and_series_unit_cvar(
+            Dict_ExtraData, Grid,
+            DF_CostoCentrales, StageNum)
+        # NOT USED!: DF_CotasEmbalsesXEtapa, DF_CVarReservoir_hid
         ################################################################################
         ################################################################################
         ################################################################################
         ################################################################################
         #
         # Calcula CMg previo congestión [$US/MWh]  # CVar en [$US/MWh]
-        # Descarga las unidades que posean generación nula
-
-        ################################################################################
-        ################################################################################
-        ################################################################################
-        ################################################################################
-
+        # Descarta las unidades que posean generación nula
         #
         # Finds merit list for current grid increasingly ordered and the marginal unit from same list
         marginal_unit, merit_list = find_merit_list(Grid, Dict_ExtraData)
-        print("merit_list:", merit_list)
+        print("merit_list:\n", merit_list)
         print("marginal_unit", marginal_unit)
+
+        ################################################################################
+        ################################################################################
+        ################################################################################
+        ################################################################################
+
         #
         # Modifica loading_percent para identificar congestiones. Copy by reference.
         Adjust_transfo_power_limit_2_max_allowed(Grid, Dict_ExtraData)
@@ -328,8 +358,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         if ListaCongIntra:  # Is there any IntraCongestion?
             try:
                 do_intra_congestion( Grid, Dict_ExtraData, ListaCongIntra,
-                                     MaxItCongIntra, in_node,
-                                     StageNum, StageIndexesList,
+                                     MaxItCongIntra, StageNum, StageIndexesList,
                                      CaseNum)
             except IntraCongestionIterationExceeded as e:
                 print("**************************************")
@@ -349,6 +378,8 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             # except Exception as e:
             #     print("Exception was:", e)
             #     continue
+        print("Only ONE for stage now!")
+        exit()
 
         """
               ###           #                    ###                                       #       #
@@ -529,10 +560,11 @@ def check_limits_GenRef(Grid):
 def find_merit_list(Grid, Dict_ExtraData):
     """
         Finds within the current Grid and the ExtraData an ordered list
-        of dispached (avaiable) units according to their costs in
-        increasing order. It requires previuos dispatched. Do not consider
+        of dispatched (available) units according to their costs in
+        increasing order. It requires previous dispatched. Do not consider
         (filters) unit with power 0, that might mean they are active with
-        no inyection, or they are in failure state.
+        no injection, or they are in failure state. Discards all null generation
+        units, as if they were not present.
 
         Returns two DataFrames: The first is the marginal unit as a single row
         pandas dataframe. The second element contains the merit list (last unit is marginal)
@@ -549,25 +581,26 @@ def find_merit_list(Grid, Dict_ExtraData):
 
     """
     # 1.- filters out every Grid['res_gen'] con p=0 and get indices.
-    gen_no_ref_indxs = Grid['res_gen'][ Grid['res_gen']['p_kw'] == 0 ].index
-    # 2.- filters out every Grid['res_ext_grid'] con p=0 and get indices.
-    gen_ref_indxs = Grid['res_ext_grid'][ Grid['res_ext_grid']['p_kw'] == 0 ].index
+    units_no_ref_indxs = Grid['res_gen'][ Grid['res_gen']['p_kw'] != 0 ].index
+    # 2.- filters out every Grid['res_ext_grid'] con p=0 and get indices. Should not be with null power.
+    gen_ref_indxs = Grid['res_ext_grid'][ Grid['res_ext_grid']['p_kw'] != 0 ].index
     # 3.- filter from ExtraData all rows filtered for Grid (GenRef and GenNoRefs)
-    cvar_no_ref = Dict_ExtraData['CVarGenNoRef'].loc[ gen_no_ref_indxs, : ]
-    cvar_ref = Dict_ExtraData['CVarGenRef'].loc[ gen_ref_indxs, : ]
+    cvar_no_ref = Dict_ExtraData['CVarGenNoRef'].loc[ units_no_ref_indxs, : ]
+    cvar_ref = Dict_ExtraData['CVarGenRef'].loc[ Grid['ext_grid'].loc[ gen_ref_indxs, 'name'], : ]
     # .- Adds new column to both DF for after identification of index (GenRef=True, GenNoRef=False)
     cvar_no_ref = cvar_no_ref.assign(Genref=False)
-    cvar_ref = cvar_ref.assign(Genref=True)
+    cvar_ref = cvar_ref.assign(Genref=True).reset_index(drop=True)
     # .- concatenates (index-wise) the dataframes for all columns and sort by 'CVar'. Increasing order.
     cvar_df = pd__concat([cvar_ref, cvar_no_ref], axis='index').sort_values('CVar', ascending=True)
     # .- Last row is the marginal unit
     marginal_unit = cvar_df.tail(1)  # DF
+    # ¿¿reindex???
     return (marginal_unit, cvar_df)
 
 
-def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, in_node, StageNum, StageIndexesList, CaseNum):
+def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, StageNum, StageIndexesList, CaseNum):
     """
-        Do the algorithm of intercongestion.
+        Do the algorithm of intracongestion.
         Returns values if something goes wrong. Otherwise it's None.
     """
     IntraCounter = 0
@@ -595,7 +628,7 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, in
                 raise ValueError(msg)
 
             FirstTime = True  # to get first value
-            # iterates over all elements in same congestion element series to get minimum capacity
+            # iterates over all elements in same congestion element series to get minimum capacity from them
             for IndTable in ListIndTable:
                 FlowDir = np__sign(Grid['res_' + TypeElmnt].at[IndTable, res_FlowFromNameCol])  # line flow sign from A to B is 1
                 if FlowDir == 1:  # choose column (name) according to flow direction of overload element within Grid
@@ -613,9 +646,19 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, in
                 else:  # updates previous capacity
                     PrevCap = ActualCap
 
-        TypeElmnt, IndTable = MinCapElmtType
+        #
+        TypeElmnt, IndTable = MinCapElmtType  # element with lower capacity of the serie
         # keeps track of number of times done. Must stay before redispath because of continue
         IntraCounter += 1
+        overloads_df = Grid['res_' + TypeElmnt][ Grid['res_' + TypeElmnt]['loading_percent'] > 100 ]
+        overloads_df = pd__concat(
+            [
+                overloads_df.loc[:, ['p_from_kw', 'i_from_ka', 'loading_percent']],
+                Grid.line.loc[overloads_df.index, ['name', 'from_bus', 'to_bus', 'length_km', 'r_ohm_per_km', 'x_ohm_per_km', 'c_nf_per_km', 'max_i_ka' ]]
+            ],
+            axis=1)
+        print("overloads_df:\n", overloads_df)
+
         print("TypeElmnt:", TypeElmnt)
         print("IndTable:", IndTable)
         print("******")
@@ -782,6 +825,22 @@ def estimates_power_losses(net, method='linear'):
         msg = "method '{}' is no available yet.".format(method)
         logger.error(msg)
         raise ValueError(msg)
+
+
+def update_resevoirs_and_series_unit_cvar(Dict_ExtraData, Grid, DF_CostoCentrales, StageNum):
+    """
+        Updates Dict_ExtraData['CVarGenNoRef'] values according to Grid.gen.names
+        and DF_CostoCentrales_StageNum values
+    """
+    series_and_reservoir_units = Grid.gen[ Grid.gen.type.isin(['Serie', 'Embalse']) ]
+    # Grid unit names whose types are 'Series' or 'Embalse' (units_name_list)
+    units_name_list = series_and_reservoir_units.name.tolist()
+    # fetch cost values for corresponding columns for current stage
+    cvars_per_unit = DF_CostoCentrales.loc[StageNum, units_name_list]
+    # get indices of non ref units (within grid and Dict_ExtraData)
+    unit_indices = series_and_reservoir_units.index
+    # updates values
+    Dict_ExtraData['CVarGenNoRef'].loc[unit_indices, 'CVar'] = cvars_per_unit.values
 
 
 def write_values_and_finish(RelevantData, CaseNum, CaseID, outputDir='.'):

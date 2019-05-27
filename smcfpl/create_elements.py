@@ -37,7 +37,7 @@ aux_funcs.setup_logger('Intra_congestion', log_file=r'IntraCongs.log',
 
 # create local logger variable
 logger = logging.getLogger('stdout_only')
-logger_IntraCong = logging.getLogger('stdout_only')
+logger_IntraCong = logging.getLogger('Intra_congestion')
 # Cambia logger level de pandapower al actual
 logging.getLogger("pandapower").setLevel(logger.level)
 
@@ -517,10 +517,6 @@ class Simulation(object):
                 for NDem in range(1, self.NumVecesDem + 1):
                     for NGen in range(1, self.NumVecesGen + 1):
                         case_num_counter += 1
-                        # get relevant values form hydrology
-                        # DF_CotasEmbalsesXEtapa = self.BD_Hydro[HidNom]['DF_CotasEmbalsesXEtapa']
-                        # DF_CostoCentrales = self.BD_Hydro[HidNom]['DF_CostoCentrales']
-
                         # Creates an iterator (class type with __next__ dunder) for each loop (different values)
                         instance_IterDem = aux_funcs.IteratorDemand(StageIndexesList=self.BD_Etapas.index.tolist(),
                                                                     DF_TasaCLib=self.BD_DemProy[['TasaCliLib']],  # pandas DataFrame
@@ -554,7 +550,7 @@ class Simulation(object):
                                                               { 'abs_OutFilePath': self.abs_OutFilePath,
                                                                 'DemGenerator': instance_IterDem,
                                                                 'DispatchGenerator': instance_IterDispatched,
-                                                                'in_node': False, 'CaseID': case_identifier,
+                                                                'CaseID': case_identifier,
                                                                 }
                                                               )
                                             )
@@ -570,7 +566,7 @@ class Simulation(object):
                                                                         abs_OutFilePath= self.abs_OutFilePath,
                                                                         DemGenerator=instance_IterDem,
                                                                         DispatchGenerator=instance_IterDispatched,
-                                                                        in_node=False, CaseID=case_identifier,
+                                                                        CaseID=case_identifier,
                                                                         )
                             total_stages_succeded += NumSuccededStages
 
