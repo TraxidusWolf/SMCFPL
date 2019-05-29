@@ -16,8 +16,12 @@ from numpy import uint8, uint32, uint64, int8, int32, int64
 from numpy import repeat as np__repeat, unique as np__unique
 from numpy import nonzero as np__nonzero, isnan as np__isnan
 from numpy import argwhere as np__argwhere, seterr as np__seterr
-from numpy import copy as np__copy
+from numpy import copy as np__copy, where as np__where
+from numpy import set_printoptions as np__set_printoptions
+from pandas import concat as pd__concat
+from collections import OrderedDict
 import logging
+
 
 # custom module
 try:    # try importing locally when run independently
@@ -31,7 +35,7 @@ logging.basicConfig(level=logging.DEBUG,
 logger = logging.getLogger()
 
 
-def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
+def redispatch(Grid, Dict_ExtraData, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
     """
         Elimina la congestión en TypeElmnt: BranchIndTable, en caso de poseer carga de
         potencia > max_load_percent.
@@ -91,145 +95,191 @@ def redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100, decs=14):
     # Calculate GSDF matrix factors (uses aproximation for really small numbers)
     GSDFmat = calc_GSDF_factor(Bbus, Bpr, Amat, RefBusMatIndx, CondMat=True, decs=decs)
     # Calculate GGDF and Generation Utilizatión matrix factors (uses aproximation for really small numbers)
-    GGDFmat, FUPTG, GenIndx2BusIndx, IndGenRef_GBusMat = calc_GGDF_Factor(Grid,
-                                                                          GSDFmat,
-                                                                          RefBus,
-                                                                          decs=decs,
-                                                                          FUTP_cf=False)  # no correction flow
-    # Find the Non ERNC unit, so they can not change power dispatched
-    ListaERNC = ['Solar', 'EólicaZ1', 'EólicaZ2', 'EólicaZ3', 'EólicaZ4']  # hard coded, MUST CHANGE!
-    FUPTG_GenGridNonERNCIndx, NonERNCIndx_GenFUPTG = gen_grid_indx_Non_ERNC_from_FUPTG( Grid.gen,
-                                                                                        ListaERNC,
-                                                                                        IndGenRef_GBusMat,
-                                                                                        FUPTG.shape[1])
-    # FUPTG_GenGridIndices = gen_grid_indx_from_FUPTG(Grid.gen, IndGenRef_GBusMat, FUPTG.shape[1])
+    GGDFmat, FUPTG, IndGenRef_GBusMat, GenBus_mat = calc_GGDF_Factor( Grid, GSDFmat,
+                                                                      RefBus, decs=decs,
+                                                                      FUTP_cf=False)
+    # Find the NON-ERNC unit, so they are the ONLY TO CHANGE POWER DISPATCHED
+    ERNC_type_list_names = ['Solar', 'EólicaZ1', 'EólicaZ2', 'EólicaZ3', 'EólicaZ4', 'Pasada']  # hard coded, MUST CHANGE!
+
+    non_fixed_units_pd2ppc, fixed_units_pd2ppc = dict(), dict()
+    non_fixed_gen_net_idx = Grid.gen[ ~Grid.gen['type'].isin(ERNC_type_list_names) ].index
+    non_fixed_units_pd2ppc['gen'] = Grid._pd2ppc_lookups['gen'][non_fixed_gen_net_idx]
+    aux_filter_DF = Dict_ExtraData['TecGenSlack']['GenTec'].isin(ERNC_type_list_names).values
+    non_fixed_ext_grid_net_idx = Dict_ExtraData['TecGenSlack'][ ~aux_filter_DF ]['pp_ext_grid_idx'].values
+    non_fixed_units_pd2ppc['ext_grid'] = Grid._pd2ppc_lookups['ext_grid'][non_fixed_ext_grid_net_idx]
+
+    fixed_gen_net_idx = Grid.gen[ Grid.gen['type'].isin(ERNC_type_list_names) ].index
+    fixed_units_pd2ppc['gen'] = Grid._pd2ppc_lookups['gen'][fixed_gen_net_idx]
+    aux_filter_DF = Dict_ExtraData['TecGenSlack']['GenTec'].isin(ERNC_type_list_names).values
+    fixed_ext_grid_net_idx = Dict_ExtraData['TecGenSlack'][ aux_filter_DF ]['pp_ext_grid_idx'].values
+    fixed_units_pd2ppc['ext_grid'] = Grid._pd2ppc_lookups['gen'][fixed_ext_grid_net_idx]
+
     # Get the row of the branch of interest from matrices (according to IndxBrnchElmnts and input argument)
     TheRowBrnchIndMat = IndxBrnchElmnts[TypeElmnt][BranchIndTable]  # asume elementos de tabla ordenados secuencialmente según tablas Grid
-    ### (Por ahora) Uses FUPTG to determine the most and least participation generators on line flow
-    # Obtiene el máximo y el mínimo de fila de la rama en cuestión
+    # Uses FUPTG to determine the most and least participation generators on line flow. Uses ordered
     RowValues = FUPTG[TheRowBrnchIndMat, :]
-    # print("IndGenRef_GBusMat:", IndGenRef_GBusMat)
-    # print("FUPTG_GenGridNonERNCIndx:", FUPTG_GenGridNonERNCIndx)
-    # print("FUPTG_GenGridIndices:", FUPTG_GenGridIndices)
-    print("RowValues:", RowValues)
-
     # calcula la potencia sobrante
-    OverloadP_kW, loading_percent = power_over_congestion( Grid,
-                                                           TypeElmnt,
+    OverloadP_kW, loading_percent = power_over_congestion( Grid, TypeElmnt,
                                                            BranchIndTable,
                                                            max_load_percent)
-    print("OverloadP_kW:", OverloadP_kW)
-    print("loading_percent:", loading_percent)
     if (OverloadP_kW <= 0) :  # & (loading_percent < max_load_percent) ?
         # here catch negative o zero value "DiffPower"
         msg = "Branch '{}' wasn't really congested ({:.4f} %)".format(TypeElmnt, loading_percent)
         logger.error(msg)
         raise FalseCongestion(msg)
 
-    # normalization about sumation of absolute values
-    RowValuesNorm = RowValues / abs(RowValues).sum()  # abs(RowValuesNorm).sum() == 1
-    print("RowValuesNorm:", RowValuesNorm)
+    modify_dispatch_by_FUPTG( Grid, RowValues, OverloadP_kW, non_fixed_units_pd2ppc)
+    return None
 
-    # creates vector of new power value expected to generators
-    Power2Change_kW = -RowValuesNorm[FUPTG_GenGridNonERNCIndx] * OverloadP_kW
-    print("Power2Change_kW:", Power2Change_kW)
 
-    # Finds the limits and actual power for units
-    MaxGen_kW = abs(Grid['gen'].loc[NonERNCIndx_GenFUPTG, 'max_p_kw'].values)
-    MinGen_kW = abs(Grid['gen'].loc[NonERNCIndx_GenFUPTG, 'min_p_kw'].values)
-    ActualGen_kW = abs(Grid['res_gen'].loc[NonERNCIndx_GenFUPTG, 'p_kw'].values)
-    print("MaxGen_kW:", MaxGen_kW)
-    print("MinGen_kW:", MinGen_kW)
-    print("ActualGen_kW:", ActualGen_kW)
+def modify_dispatch_by_FUPTG(net, branch_FUPTG, power2distribute_kW, non_fixed_units_pd2ppc, method=1):
+    """
+        Algorithm to modify distribute some excess power by dispatching more influence units.
+    """
+    print("branch_FUPTG:", branch_FUPTG)
+    print("power2distribute_kW:", power2distribute_kW)
+    # reconstruct order from FUPTG columns (first all ext_grids, then gens)
+    #
+    # work with dataframes (copies of pp tables). None means not applied.
+    generators = net.gen.drop(['scaling', 'in_service', 'min_q_kvar', 'sn_kva', 'max_q_kvar', 'vm_pu', 'type', 'bus'], axis='columns')
+    generators = generators.assign(**{
+        'pd2ppc': net._pd2ppc_lookups['gen'],
+        'FUPTG_cong': branch_FUPTG[net._pd2ppc_lookups['gen']],
+        'fixed2increase': True,
+        'factorsN': None,
+        'dP_kW': None,  # dp: delta power ...
+        'dP_weigh': None,  # dp: delta power ...
+        'final_weigh': None,  # weigh factor as sum of the one from deltaP and FUPTG
+    })
+    ext_grids = net.ext_grid.drop(['vm_pu', 'va_degree', 'in_service', 'bus'], axis='columns')
+    ext_grids = ext_grids.assign(**{
+        'pd2ppc': net._pd2ppc_lookups['ext_grid'],
+        'FUPTG_cong': branch_FUPTG[net._pd2ppc_lookups['ext_grid']],
+        'fixed2increase': True,
+        'factorsN': None,
+        'dP_kW': None,  # dp: delta power ...
+        'dP_weigh': None,  # dp: delta power ...
+        'final_weigh': None,  # weigh factor as sum of the one from deltaP and FUPTG
+    })
+    if method == 1:
+        ###############################################################################################################
+        ###############################################################################################################
+        ###############################################################################################################
+        #  Method 1: Technically more efficient (FUPTG sensibility)
+        #  Unit pondered factor by positive and negative FUPTG to increase and decrease respectively power2distribute_kW
+        #  Some units are considered 'fixed2increase' generation, specially those that can only reduce (if implemented
+        #  technology) their power for redispatch. THAT IS, ALL POSITIVE FACTORS CAM BE USE TO REDUCE power.
 
-    # Calculates new power to dispatch
-    NewPower_kW = ActualGen_kW + Power2Change_kW
-
-    # Do redispatch at least once
-    PossibleRedispath = True
-    # MoreGenerationPossible = LessGenerationPossible = True
-    while PossibleRedispath:
-        """ Loop required when maximum or minimum power of units are reached.
-            Three possible exit conditions:
-            1.- Not enough generation available to redispatch at maximum power.
-            2.- Not enough generation available to redispatch at minimum power.
-            3.- Redispatch worked successfully.
-
-            In order to each, it's required:
-                1.- AvailablePower2Increase.sum() < 0: NewPower expected to dispatch is greater than MaxPower
-                2.- AvailablePower2Decrease.sum() < 0: NewPower expected to dispatch is smaller than MinPower
-                3.- (not SomeGenOverloaded) and (not SomeGenUnderloaded): No generation limits were reached
-            Note, while loop will continue as long there was a limit reached.
-        """
-        # CHECKS IF POWERS LIMITS ARE REACHED for each generator. Assumes same order from FUPTG columns
-        # print("NewPower_kW:", NewPower_kW)
-        SomeGenOverloaded = any( NewPower_kW > MaxGen_kW )
-        SomeGenUnderloaded = any( MinGen_kW > NewPower_kW )
-        if SomeGenOverloaded:
-            msg = "Some generators got overloaded (SomeGenOverloaded: {}).".format(SomeGenOverloaded)
+        # update 'fixed' values for generators and ext_grids
+        non_fixed_net_gen_idx = generators['pd2ppc'].isin( non_fixed_units_pd2ppc['gen'] )
+        generators.loc[ non_fixed_net_gen_idx, 'fixed2increase' ] = False
+        non_fixed_net_gen_idx = ext_grids['pd2ppc'].isin( non_fixed_units_pd2ppc['ext_grid'] )
+        ext_grids.loc[ non_fixed_net_gen_idx, 'fixed2increase' ] = False
+        # find out the rows that can change (non fixed and positive of negative values)
+        pos_gen_vals_idx = generators['FUPTG_cong'] > 0  # non is considered limited to reduce power
+        neg_gen_vals_idx = (generators['FUPTG_cong'] < 0) & (~generators['fixed2increase'])
+        pos_ext_grid_vals_idx = ext_grids['FUPTG_cong'] > 0  # non is considered limited to reduce power
+        neg_ext_grid_vals_idx = (ext_grids['FUPTG_cong'] < 0) & (~ext_grids['fixed2increase'])
+        # indices that will have new generation
+        # new_Pgen_idx = neg_gen_vals_idx | pos_gen_vals_idx
+        # new_Pext_grid_idx = pos_ext_grid_vals_idx | neg_ext_grid_vals_idx
+        # get sum of positives and negatives
+        sum_pos_factors = generators[pos_gen_vals_idx]['FUPTG_cong'].sum() + ext_grids[pos_ext_grid_vals_idx]['FUPTG_cong'].sum()
+        sum_neg_factors = generators[neg_gen_vals_idx]['FUPTG_cong'].sum() + ext_grids[neg_ext_grid_vals_idx]['FUPTG_cong'].sum()
+        # update positive and negative factor values for generators and ext_grids
+        generators.loc[ pos_gen_vals_idx, 'factorsN'] = generators['FUPTG_cong'] / sum_pos_factors
+        generators.loc[ neg_gen_vals_idx, 'factorsN'] = generators['FUPTG_cong'] / sum_neg_factors
+        ext_grids.loc[ pos_ext_grid_vals_idx, 'factorsN'] = ext_grids['FUPTG_cong'] / sum_pos_factors
+        ext_grids.loc[ neg_ext_grid_vals_idx, 'factorsN'] = ext_grids['FUPTG_cong'] / sum_neg_factors
+        # find delta power available corresponding factor, NaN if not. (positive to decrease or negative to increase powers)
+        generators.loc[pos_gen_vals_idx, 'dP_kW'] = generators['p_kw'].abs() - generators['min_p_kw'].abs()
+        generators.loc[neg_gen_vals_idx, 'dP_kW'] = generators['max_p_kw'].abs() - generators['p_kw'].abs()
+        ext_grids.loc[pos_ext_grid_vals_idx, 'dP_kW'] = net.res_ext_grid['p_kw'].abs() - ext_grids['min_p_kw'].abs()
+        ext_grids.loc[neg_ext_grid_vals_idx, 'dP_kW'] = ext_grids['max_p_kw'].abs() - net.res_ext_grid['p_kw'].abs()
+        # get power available
+        delta_Ppos_avail = pd__concat(
+            [
+                generators[pos_gen_vals_idx],
+                ext_grids[pos_ext_grid_vals_idx],
+            ], axis='index')['dP_kW'].fillna(0).sum()
+        delta_Pneg_avail = pd__concat(
+            [
+                generators[neg_gen_vals_idx],
+                ext_grids[neg_ext_grid_vals_idx],
+            ], axis='index')['dP_kW'].fillna(0).sum()
+        if power2distribute_kW > delta_Pneg_avail:
+            msg = "Not enough installed generation capacity for dispatch and solving by redispatch."
             logger.warn(msg)
-            # finds if available power can be increased on generators, if not calc new powers
-            AvailablePower2Increase = MaxGen_kW - NewPower_kW
-            AvailablePower2Increase[AvailablePower2Increase < 0] = 0  # clean those over the maximum
-            # if no more possible set LessGenerationPossible = False
-            if AvailablePower2Increase.sum() < 0:
-                msg = "No more generation can be increases."
-                logger.warn(msg)
-                # LessGenerationPossible = False
-                PossibleRedispath = False
-                break  # break while
-            # calculate power left
-            DeltaP_kW = NewPower_kW - MaxGen_kW
-            DeltaP_kW[DeltaP_kW < 0] = 0
-            DeltaP_kW = DeltaP_kW.sum()
-            # get inidices of limited units
-            IndxLimitedUnits = NewPower_kW > MaxGen_kW
-            IndxNonLimitedUnits = NewPower_kW <= MaxGen_kW
-            # fix to limit values
-            NewPower_kW[IndxLimitedUnits] = MaxGen_kW[IndxLimitedUnits]
-            # calculates weights for others generators to split the OverloadP_kW
-            NewWeights = RowValuesNorm[FUPTG_GenGridNonERNCIndx][IndxNonLimitedUnits]
-            # split power acorss other generators accordingly to FUPTG factors. Preserves the sign.
-            NewPower_kW[IndxNonLimitedUnits] += NewWeights / abs(NewWeights).sum() * DeltaP_kW
-        if SomeGenUnderloaded:
-            msg = "Some generators got underloaded (SomeGenUnderloaded: {}).".format(SomeGenUnderloaded)
+            raise CapacityOverloaded(msg)
+        if power2distribute_kW > delta_Ppos_avail:
+            msg = "Not enough capacity to decrease for solving redispatch without curtailment."
             logger.warn(msg)
-            # finds if available power can be reduced on generators, if not calc new powers
-            AvailablePower2Decrease = NewPower_kW - MinGen_kW
-            AvailablePower2Decrease[AvailablePower2Decrease < 0] = 0  # clean those below the minimum
-            # if no more possible set LessGenerationPossible = False
-            if AvailablePower2Decrease.sum() < 0:
-                msg = "No less generation can be decrease."
-                logger.warn(msg)
-                # MoreGenerationPossible = False
-                PossibleRedispath = False
-                break  # break while
-            # calculate power left
-            DeltaP_kW = MinGen_kW - NewPower_kW
-            DeltaP_kW[DeltaP_kW < 0] = 0
-            DeltaP_kW = DeltaP_kW.sum()
-            # get inidices of limited units
-            IndxLimitedUnits = MinGen_kW > NewPower_kW
-            IndxNonLimitedUnits = MinGen_kW <= NewPower_kW
-            # fix to limit values
-            NewPower_kW[IndxLimitedUnits] = MinGen_kW[IndxLimitedUnits]
-            # calculates weights for others generators to split the OverloadP_kW
-            NewWeights = RowValuesNorm[FUPTG_GenGridNonERNCIndx][IndxNonLimitedUnits]
-            # split power acorss other generators accordingly to FUPTG factors. Preserves the sign.
-            NewPower_kW[IndxNonLimitedUnits] += NewWeights / abs(NewWeights).sum() * DeltaP_kW
-        if (not SomeGenOverloaded) and (not SomeGenUnderloaded):
-            # Exit condition for redispatch complete
-            print("Exit condition for redispatch complete")
-            break
-        import pdb; pdb.set_trace()  # breakpoint 44f1fdce //
+            raise CapacityOverloaded(msg)
 
-    if not PossibleRedispath:
-        msg = "Not enough power available on generators to stop 'inter-congestion'."
-        logger.error(msg)
-        raise CapacityOverloaded(msg)
+        # from pandas import options as pd__options
+        # from matplotlib.ticker import EngFormatter
+        # pd__options.display.float_format = EngFormatter()
 
-    # Finally assign the new power to Grid generators
-    Grid['gen'].loc[NonERNCIndx_GenFUPTG, 'p_kw'] = -NewPower_kW
+        # weigh factors given deltaP power
+        generators.loc[ pos_gen_vals_idx, 'dP_weigh'] = generators['dP_kW'] / delta_Ppos_avail
+        generators.loc[ neg_gen_vals_idx, 'dP_weigh'] = generators['dP_kW'] / delta_Pneg_avail
+        ext_grids.loc[pos_ext_grid_vals_idx, 'dP_weigh'] = ext_grids['dP_kW'] / delta_Ppos_avail
+        ext_grids.loc[neg_ext_grid_vals_idx, 'dP_weigh'] = ext_grids['dP_kW'] / delta_Pneg_avail
+        # re-weigh final factor from power and FUTPGs. JUST ADD THEM!!
+        generators['final_weigh'] = generators['dP_weigh'] + generators['factorsN']
+        ext_grids['final_weigh'] = ext_grids['dP_weigh'] + ext_grids['factorsN']
+        # calculate sum for ponderation
+        pos_total_weigh = pd__concat(
+            [
+                generators[pos_gen_vals_idx],
+                ext_grids[pos_ext_grid_vals_idx],
+            ], axis='index')['final_weigh'].sum()
+        neg_total_weigh = pd__concat(
+            [
+                generators[neg_gen_vals_idx],
+                ext_grids[neg_ext_grid_vals_idx],
+            ], axis='index')['final_weigh'].sum()
+        # update pondered final_weighs
+        generators.loc[pos_gen_vals_idx, 'final_weigh'] /= pos_total_weigh
+        generators.loc[neg_gen_vals_idx, 'final_weigh'] /= neg_total_weigh
+        ext_grids.loc[pos_ext_grid_vals_idx, 'final_weigh'] /= pos_total_weigh
+        ext_grids.loc[neg_ext_grid_vals_idx, 'final_weigh'] /= neg_total_weigh
+
+        # Updates power difference (abs values)
+        newP_kW_gen = generators['final_weigh'].fillna(0) * power2distribute_kW
+
+        # Power corresponding to slack bus has to be transfer to other generators, per slack unit (unique)
+        # If slack belongs to positive, then all other units have to equally increase generation (those negative)
+        for unit in ext_grids[pos_ext_grid_vals_idx].iterrows():
+            # get value of total power to share
+            P_ext_grid2others = unit['final_weigh'] * power2distribute_kW
+            # here absolut values
+            newP_kW_gen += P_ext_grid2others / newP_kW_gen[neg_gen_vals_idx].shape[0]
+        # else, (belongs to negative) all other units have to equally decrease generation (those positive)
+        for unit in ext_grids[neg_ext_grid_vals_idx].iterrows():
+            # get value of total power to share
+            P_ext_grid2others = unit['final_weigh'] * power2distribute_kW
+            # here absolut values
+            newP_kW_gen -= P_ext_grid2others / newP_kW_gen[pos_gen_vals_idx].shape[0]
+
+        # Finally assign the new power to Grid generators. Respect signs
+        #
+        # decrement the ones with positive FPUTG (and possible)
+        net.gen.loc[pos_gen_vals_idx, 'p_kw'] -= -newP_kW_gen[pos_gen_vals_idx].values
+        # increment the ones with negative FPUTG (and possible)
+        net.gen.loc[neg_gen_vals_idx, 'p_kw'] += -newP_kW_gen[neg_gen_vals_idx].values
+
+    elif method == 2:
+        ###############################################################################################################
+        ###############################################################################################################
+        ###############################################################################################################
+        #  Method 2: ???
+        #       ???
+        pass
+        ###############################################################################################################
+        ###############################################################################################################
+        ###############################################################################################################
+    return None
 
 
 def make_Bbus_Bpr_A(Grid):
@@ -376,6 +426,8 @@ def calc_GGDF_Factor(Grid, GSDF, RefBus, decs=10, FUTP_cf=True):
         There must exists only one ext_grid within Grid. If more, user should
         convert them to conventional generators.
 
+        FUPTG convention: First group of columns ares for reference (all ext_grid). Other for generators (all gen)
+
         Arguments:
         Grid (pandapower net) with at least one external grid, a generator and one bus. (able to run power flow)
 
@@ -390,6 +442,8 @@ def calc_GGDF_Factor(Grid, GSDF, RefBus, decs=10, FUTP_cf=True):
 
     """
     _ppc = Grid._ppc
+    _pd2ppc_lookups = Grid._pd2ppc_lookups
+    np__set_printoptions(linewidth=500)
     # Number of nodes, branches and generator
     NNodes = _ppc['bus'].shape[0]
     Nbranches = _ppc['branch'].shape[0]
@@ -398,24 +452,24 @@ def calc_GGDF_Factor(Grid, GSDF, RefBus, decs=10, FUTP_cf=True):
     F_ik = np__real(_ppc['branch'][:, [PF]])  # power [MW] inyected from 'from_bus'
     F_ik = sps__csr_matrix(F_ik)
 
-    # initialize list to relation generator index to bus index
-    GenIndx2BusIndx = []  # each value represents the bus index (Grid table) of the generator as list index (for GenBus_mat)
-    IndGenRef_GBusMat = -1  # represents the index of GenIndx2BusIndx, to know which generator is the reference one on GenBus_mat.
-    NumGen = 0
+    # get gen ref index of _ppc matrix (unique reference considered)
+    IndGenRef_GBusMat = _pd2ppc_lookups['ext_grid'][0]
+    ref_units_GbusMat = _pd2ppc_lookups['ext_grid']  # matrix _ppc index ref_units
+    non_ref_units_GbusMat = _pd2ppc_lookups['gen']  # matrix _ppc index non_ref_units
+    # FUPTG convention: Use same indexing as _ppc matrices.
+    ppc_gen_idx_from_pd = np__r_[ref_units_GbusMat, non_ref_units_GbusMat]
     # initialize data and matrix indices for Generator power per bus matrix (GenBus_mat)
     data, idx, jdx = [], [], []
-    for BusInd, PGen_MW, Qmax, Qmin in _ppc['gen'][:, [GEN_BUS, PG, QMAX, QMIN]]:  # GEN_BUS indices of Grid.bus (same as BUS_I)
-        BusInd = int(BusInd)
-        PGen_MW = float(PGen_MW)
+    for NumGen, (BusInd, PGen_MW) in enumerate(_ppc['gen'][:, [GEN_BUS, PG]]):
+        # iterate over rows from numpy array (matrix). 'gen' includes ext_grids and generators.
+        BusInd = int(BusInd)  # bus id. Supposed in ascending order because of previous filtering.
+        PGen_MW = float(PGen_MW)  # power dispatched on unit.
 
+        # table_idx = np__where( NumGen == ppc_gen_idx_from_pd )[0][0]
+        table_idx = ppc_gen_idx_from_pd[NumGen]
         idx.append(BusInd)  # must start from zero (0-indexed)
-        jdx.append(NumGen)
+        jdx.append(table_idx)  # keeps dataframe index correlation for further use
         data.append(PGen_MW)
-        GenIndx2BusIndx.append(BusInd)
-        if (IndGenRef_GBusMat == -1) & (Qmax == 0) & (Qmin == 0):
-            # external grid do no have parameter to reactive power limits
-            IndGenRef_GBusMat = NumGen
-        NumGen += 1  # Orden creciente de generadores
     GenBus_mat = sps__csr_matrix( (data, (idx, jdx)), (NNodes, Ngen) )  # Nodes x NumGen
 
     # Creates generation matrix. Equivalent Power injected to each node (nodos x 1).
@@ -442,31 +496,7 @@ def calc_GGDF_Factor(Grid, GSDF, RefBus, decs=10, FUTP_cf=True):
 
     # Calculates "Factores de Utilización por Tramo de Generación"
     FUPTG = calc_FUTP_gen(GGDF, GenBus_mat, Gmat, F_ik, FUTP_cf, decs = decs)
-    # if np__isnan(FUPTG).any():
-    #     import numpy as np
-    #     np.set_printoptions(linewidth=20000, threshold=2000)
-    #     # get the row with nan row
-    #     idxNan = np.unique( np.where( np.isnan(FUPTG) )[0] )[0]
-    #     print("idxNan:\n", idxNan)
-    #     # get to know name of element asociated to row
-    #     NameRowElmnt = name_of_elmnt_row(Grid, idxNan)
-    #     print("NameRowElmnt:\n", NameRowElmnt)
-    #     # find the column index of only one value = -1
-    #     NameColElmntNegative = ''
-    #     print("NameColElmntNegative:\n", NameColElmntNegative)
-
-    #     print("FUPTG:\n", FUPTG)
-    #     print("FUPTG.shape:\n", FUPTG.shape)
-    #     print("GGDF.A:\n", GGDF.A)
-    #     print("GGDF.shape:\n", GGDF.shape)
-    #     print("GenBus_mat.A:\n", GenBus_mat.A)
-    #     print("GenBus_mat.shape:\n", GenBus_mat.shape)
-    #     print("Gmat.A:\n", Gmat.A)
-    #     print("Gmat.shape:\n", Gmat.shape)
-    #     print("Grid._pd2ppc_lookups:", Grid._pd2ppc_lookups)
-
-    #     print("Grid:\n", Grid)
-    return GGDF, FUPTG, GenIndx2BusIndx, IndGenRef_GBusMat
+    return GGDF, FUPTG, IndGenRef_GBusMat, GenBus_mat
 
 
 def calc_FUTP_gen(GGDFmat, GenBus_mat, Gmat, F_ik, cf = True, decs = 10):
@@ -576,96 +606,3 @@ def name_of_elmnt_row(Grid, idxNan):
         raise NameError("No idxNan: '{}' found in Grid".format(idxNan))
     Name = Grid[TypeElmnt].at[pdIndx, 'name']
     return Name
-
-
-def gen_grid_indx_from_FUPTG(Grid_gen_tbl, IndGenRef_GBusMat, NumColumnsFUPTG):
-    """
-        Makes the assumtion to have all Grid_gen_tbl 0-indexed ordered. Note taht 'IndGenRef_GBusMat'
-        is zero-idexed as well as 'range(NumColumnsFUPTG)'.
-
-        Inputs:
-            **Grid_gen_tbl**: pandas table of grid
-            **IndGenRef_GBusMat**: (0-indexed)
-            **NumColumnsFUPTG**: FUPTG.shape[1]
-
-        Returns a list of the grid generator indices.
-    """
-    # verifies that Grid_gen_tbl index length is the same as NumColumnsFUPTG
-    if len(Grid_gen_tbl.index) != (NumColumnsFUPTG - 1):
-        msg = "Grid_gen_tbl is not the same as NumColumnsFUPTG"
-        logger.error(msg)
-        raise ValueError(msg)
-    lista = []
-    counter = 0
-    for i in range(NumColumnsFUPTG):
-        if i != IndGenRef_GBusMat:
-            lista.append(counter)
-        counter += 1
-    return lista
-
-
-def gen_grid_indx_Non_ERNC_from_FUPTG(Grid_gen_tbl, ListaERNC, IndGenRef_GBusMat, NumColumnsFUPTG):
-    """
-        Makes the assumtion to have all Grid_gen_tbl 0-indexed ordered.
-
-        Returns a list of the grid generator indices and the pandas index dataframe NonERNC_GridGen.
-    """
-    if Grid_gen_tbl.shape[0] != (NumColumnsFUPTG - 1):
-        msg = "Grid_gen_tbl num rows is not the same as NumColumnsFUPTG"
-        logger.error(msg)
-        raise ValueError(msg)
-    NonERNC_GridGen = Grid_gen_tbl[ ~Grid_gen_tbl['type'].isin(ListaERNC) ].index
-    ListReturned = []
-    Counter = 0
-    for i in range(NumColumnsFUPTG):
-        if i in NonERNC_GridGen:
-            ListReturned.append(i)
-            Counter += 1
-    return (ListReturned, NonERNC_GridGen)
-
-
-if __name__ == '__main__':
-    # directly import conftest.py file (test only)
-    import pandapower as pp
-    from sys import path as sys__path
-    sys__path.insert(0, "test/")
-    sys__path.insert(0, '..')
-    from smcfpl.aux_funcs import TipoCong
-
-    LoadPercent = 1.73  # 1.5
-    # import test case
-    from conftest import Sist5Bus
-    Grid = Sist5Bus()
-    pp.rundcpp(Grid)
-    Inter, Intra = TipoCong(Grid, max_load=LoadPercent)
-    print("Inter:", Inter); print("Intra:", Intra)
-    print(Grid.res_line)
-    print(Grid.res_gen)
-    print(Grid.res_ext_grid)
-    print()
-
-    print("--- 1st Redispatch to line: 0")
-    redispatch(Grid, 'line', 0, max_load_percent=LoadPercent, decs=30)  # hard codede
-    pp.rundcpp(Grid)
-    Inter, Intra = TipoCong(Grid, max_load=LoadPercent)
-    print("Inter:", Inter); print("Intra:", Intra)
-    print(Grid.res_line)
-    print(Grid.res_gen)
-    print(Grid.res_ext_grid)
-    # print()
-
-    # print("--- 2st Redispatch to line: 4")
-    # redispatch(Grid, 'line', 4, max_load_percent=LoadPercent, decs=30)  # hard codede
-    # pp.rundcpp(Grid)
-    # Inter, Intra = TipoCong(Grid, max_load=LoadPercent)
-    # print("Inter:", Inter); print("Intra:", Intra)
-    # print(Grid.res_line)
-    # print()
-
-    # print("--- 3st Redispatch to line: 4")
-    # redispatch(Grid, 'line', 4, max_load_percent=LoadPercent, decs=30)  # hard codede
-    # pp.rundcpp(Grid)
-    # Inter, Intra = TipoCong(Grid, max_load=LoadPercent)
-    # print("Inter:", Inter); print("Intra:", Intra)
-    # print(Grid.res_line)
-    # print()

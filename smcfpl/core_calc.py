@@ -234,7 +234,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         print(pd__concat(
             [
                 Grid.ext_grid,
-                Dict_ExtraData['TecGenSlack'].reset_index(drop=True)
+                Dict_ExtraData['TecGenSlack'][['GenTec']].reset_index(drop=True)
             ], axis='columns'))
         # exit()
         ####################################################################################
@@ -326,8 +326,8 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         #
         # Finds merit list for current grid increasingly ordered and the marginal unit from same list
         marginal_unit, merit_list = find_merit_list(Grid, Dict_ExtraData)
-        print("merit_list:\n", merit_list)
-        print("marginal_unit", marginal_unit)
+        # print("merit_list:\n", merit_list)
+        # print("marginal_unit", marginal_unit)
 
         ################################################################################
         ################################################################################
@@ -585,8 +585,12 @@ def find_merit_list(Grid, Dict_ExtraData):
     # 2.- filters out every Grid['res_ext_grid'] con p=0 and get indices. Should not be with null power.
     gen_ref_indxs = Grid['res_ext_grid'][ Grid['res_ext_grid']['p_kw'] != 0 ].index
     # 3.- filter from ExtraData all rows filtered for Grid (GenRef and GenNoRefs)
-    cvar_no_ref = Dict_ExtraData['CVarGenNoRef'].loc[ units_no_ref_indxs, : ]
-    cvar_ref = Dict_ExtraData['CVarGenRef'].loc[ Grid['ext_grid'].loc[ gen_ref_indxs, 'name'], : ]
+    cvar_no_ref = Dict_ExtraData['CVarGenNoRef'].loc[ units_no_ref_indxs, ['CVar'] ]
+    cvar_ref = Dict_ExtraData['CVarGenRef'].loc[ Grid['ext_grid'].loc[ gen_ref_indxs, 'name'], ['CVar'] ]
+    # .- Add th technology to each DataFrame
+    cvar_no_ref = pd__concat([ cvar_no_ref, Grid['gen']['type'] ], axis='columns')
+    cvar_no_ref.columns = ['CVar', 'GenTec']  # rename column 'type' to 'GenTec'
+    cvar_ref = pd__concat( [cvar_ref, Dict_ExtraData['TecGenSlack'].loc[:, ['GenTec']] ], axis='columns')
     # .- Adds new column to both DF for after identification of index (GenRef=True, GenNoRef=False)
     cvar_no_ref = cvar_no_ref.assign(Genref=False)
     cvar_ref = cvar_ref.assign(Genref=True).reset_index(drop=True)
@@ -654,7 +658,10 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, St
         overloads_df = pd__concat(
             [
                 overloads_df.loc[:, ['p_from_kw', 'i_from_ka', 'loading_percent']],
-                Grid.line.loc[overloads_df.index, ['name', 'from_bus', 'to_bus', 'length_km', 'r_ohm_per_km', 'x_ohm_per_km', 'c_nf_per_km', 'max_i_ka' ]]
+                Grid.line.loc[overloads_df.index, [
+                    'name', 'from_bus', 'to_bus', 'length_km',
+                    'r_ohm_per_km', 'x_ohm_per_km', 'c_nf_per_km',
+                    'max_i_ka' ]]
             ],
             axis=1)
         print("overloads_df:\n", overloads_df)
@@ -679,7 +686,7 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, St
         try:
             msg = "Congestion redispatch started..."
             logger.debug(msg)
-            redispatch__redispatch(Grid, TypeElmnt, IndTable, max_load_percent=100, decs=30)
+            redispatch__redispatch(Grid, Dict_ExtraData, TypeElmnt, IndTable, max_load_percent=100, decs=30)
         except FalseCongestion:
             # Redispatch has no meaning. Congestion wan't real. Jump to next one
             continue
@@ -715,8 +722,20 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, St
         ListaCongInter, ListaCongIntra = aux_funcs__TipoCong(Grid, max_load=100)
         print("ListaCongIntra:", ListaCongIntra)
         print("ListaCongInter:", ListaCongInter)
+        overloads_df = Grid['res_' + TypeElmnt][ Grid['res_' + TypeElmnt]['loading_percent'] > 100 ]
+        overloads_df = pd__concat(
+            [
+                overloads_df.loc[:, ['p_from_kw', 'i_from_ka', 'loading_percent']],
+                Grid.line.loc[overloads_df.index, [
+                    'name', 'from_bus', 'to_bus', 'length_km',
+                    'r_ohm_per_km', 'x_ohm_per_km', 'c_nf_per_km',
+                    'max_i_ka' ]]
+            ],
+            axis=1)
+        print("overloads_df:\n", overloads_df)
         print("--- fin iteración while ---")
         ListaCongIntra = iter(ListaCongIntra)
+        import pdb; pdb.set_trace()  # breakpoint 4596f6e4 //
     return None
 
 

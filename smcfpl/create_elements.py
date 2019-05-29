@@ -1414,13 +1414,17 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
 
     # 9.- Única unidad de referencia existente debe ser ingresada como Red Externa (Requerimientos de PandaPower)
     pdDF_GenRef = GenDisp[GenDisp['EsSlack']]
+    genref_extra_data = pdDF_GenRef[['GenTec', 'CVar', 'EsSlack']]
+    idx_list = list()
     for gen_nom, row_pdser in pdDF_GenRef.iterrows():  # there should be only one iteration. Done for completeness
         # gets the index bus number from connected bus (only one bus should exist)
         IndBarraConn = Grid['bus'][ Grid['bus']['name'] == row_pdser['NomBarConn'] ].index[0]
-        pp__create_ext_grid( Grid, bus=IndBarraConn, vm_pu=1.0, va_degree=0.0, name=gen_nom,
-                             max_p_kw=-row_pdser['PmaxMW'] * 1e3, min_p_kw=-row_pdser['PminMW'] * 1e3 )  # negativo para generación
+        idx_ext_grid = pp__create_ext_grid( Grid, bus=IndBarraConn, vm_pu=1.0, va_degree=0.0, name=gen_nom,
+                                            max_p_kw=-row_pdser['PmaxMW'] * 1e3, min_p_kw=-row_pdser['PminMW'] * 1e3 )  # negativo para generación
         # 10.- Elimina el generador de referencia del DataFrame de disponibles para no ser reconocido como no referencia
         GenDisp.drop(labels=gen_nom, axis='index', inplace=True)
+        idx_list.append(idx_ext_grid)
+    genref_extra_data = genref_extra_data.assign(**{'pp_ext_grid_idx': idx_list})
 
     # 11.- Por cada Generador disponible crea el correspondiente elemento en la RED
     for GenNom, Generador in GenDisp.iterrows():
@@ -1428,7 +1432,7 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
         # Notar que se le asigna la potencia nominal a la carga. Ésta es posteriormente modificada según los parámetros de la etapa en cada proceso
         pp__create_gen(Grid, bus=IndBarraConn, name=GenNom, p_kw=-Generador['PmaxMW'] * 1e3,
                        max_p_kw=-Generador['PmaxMW'] * 1e3, min_p_kw=-Generador['PminMW'] * 1e3,
-                       type=Generador['GenTec'])  # p_kw es negativo para generación
+                       max_q_kvar=0, min_q_kvar=0, type=Generador['GenTec'])  # p_kw es negativo para generación
 
     # 12.- Elimina los elementos del sistema en caso de quedan sin aislados (Sin conexión a Gen Ref) producto de mantención
     #      Notar que pueden definirse múltiples Generadores de referencia, los cuales podrán quedar separados eléctricamente.
@@ -1446,9 +1450,9 @@ def CompletaSEP_PandaPower(DF_TecBarras, DF_TecLineas, DF_TecTrafos2w,
 
     # 13.- Actualiza el diccionario ExtraData con información adicional
     # Costo variable unidad de referencia (Red Externa)
-    ExtraData['CVarGenRef'] = pdDF_GenRef[['CVar']]  # DF
+    ExtraData['CVarGenRef'] = genref_extra_data[['CVar', 'pp_ext_grid_idx']]  # DF
     # Nombre de la tecnología del generador de referencia
-    ExtraData['TecGenSlack'] = pdDF_GenRef[['GenTec']]  # DF
+    ExtraData['TecGenSlack'] = genref_extra_data[['GenTec', 'pp_ext_grid_idx']]  # DF
     # Número de cargas existentes por etapa
     ExtraData['NumLoads'] = Grid['load'].shape[0]
     # pandas DataFrame del índice de generadores en la Grilla y Tipo de tecnología
