@@ -21,6 +21,7 @@ from pandas import DataFrame as pd__DataFrame
 from pandas import concat as pd__concat
 from numpy import cos as np__cos, real as np__real, sign as np__sign
 from numpy import isnan as np__isnan, seterr as np__seterr, array as np__array
+from numpy import eye as np__eye, ones as np__ones
 from scipy.sparse import linalg
 from pickle import load as pickle__load
 from multiprocessing import cpu_count as mu__cpu_count, Pool as mu__Pool
@@ -228,8 +229,10 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         ####################################################################################
         # dont update with variable generation and demand values
         Grid, Dict_ExtraData = Grillas[StageNum]['PandaPowerNet'], Grillas[StageNum]['ExtraData']
-        # Temporary new dispatch for single intra congestion
-        Grid.gen.p_kw = np__array([500, 650, 632, 254, 680, 595, 540, 830, 250, 500]) * -10**3  # G 02 is ref
+        # #
+        # # Temporary new dispatch for single intra congestion
+        # Grid.gen.p_kw = np__array([500, 650, 632, 254, 680, 595, 540, 830, 250, 500]) * -10**3  # G 02 is ref
+        Grid.gen.p_kw = np__array([1500, 50, 632, 254, 680, 595, 540, 830, 250, 500]) * -10**3  # G 02 is ref
         print(Grid.gen)
         print(pd__concat(
             [
@@ -260,6 +263,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             # ¿Eliminar etapa?¿?
             # DF_Etapas.drop(labels=[StageNum], axis='index', inplace=True)
             # ¿Escribir PNS?
+            import pdb; pdb.set_trace()  # breakpoint 378ceb25 //
             continue  # Continua con siguiente etapa
 
         #
@@ -275,6 +279,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             msg = "Could not solve Linear powerflow for stage {}/{} in CaseNum {}. Skipping stage."
             msg = msg.format(StageNum, len(StageIndexesList), CaseNum)
             logger.warn(msg)
+            import pdb; pdb.set_trace()  # breakpoint b195314a //
             continue  # jumps to next stage.
         except Exception as e:
             print("Something else happened during rundcpp() ...")
@@ -285,7 +290,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             #########################################################
             #########################################################
             continue
-        else:  # excecute when not exception
+        else:  # execute when not exception
             msg = "LPF ran on Grid for stage {}/{} in case {}."
             msg = msg.format(StageNum, len(StageIndexesList), CaseNum)
             logger.debug(msg)
@@ -300,15 +305,18 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             msg = str(msg).format(StageNum, len(StageIndexesList), CaseNum)
             msg += ' Skipping stage.'
             logger.warn(msg)
+            import pdb; pdb.set_trace()  # breakpoint e0a05bb9 //
             continue
         except GeneratorReferenceUnderloaded as msg:  # PGenSlack es más Positivo que Pmin (comporta como carga)
             msg = str(msg).format(StageNum, len(StageIndexesList), CaseNum)
             msg += ' Skipping stage.'
             logger.warn(msg)
+            import pdb; pdb.set_trace()  # breakpoint b25aed47 //
             continue
         except LoadFlowError as msg:
             msg = str(msg) + " Skipping stage."
             logger.error(msg)
+            import pdb; pdb.set_trace()  # breakpoint 4b40a0a6 //
             continue
 
         # updates CVar of 'Series' and 'Embalse' units (TODO: whether they are or not reference)
@@ -321,8 +329,8 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         ################################################################################
         ################################################################################
         #
-        # Calcula CMg previo congestión [$US/MWh]  # CVar en [$US/MWh]
-        # Descarta las unidades que posean generación nula
+        # Calcula CMg previo congestión [$US/MWh]  # CVar en [$US/MWh],
+        # descarta las unidades que posean generación nula
         #
         # Finds merit list for current grid increasingly ordered and the marginal unit from same list
         marginal_unit, merit_list = find_merit_list(Grid, Dict_ExtraData)
@@ -339,7 +347,7 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
         Adjust_transfo_power_limit_2_max_allowed(Grid, Dict_ExtraData)
         #
         # Obtiene lista del tipo de congestiones (TypeElmnt, IndGrilla)
-        ListaCongInter, ListaCongIntra = aux_funcs__TipoCong(Grid, max_load=100)
+        ListaCongInter, ListaCongIntra = aux_funcs__TipoCong(Grid, max_load=100)  # intra-loop entry condition
         print("ListaCongIntra:", ListaCongIntra)
         print("ListaCongInter:", ListaCongInter)
 
@@ -364,22 +372,33 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
                 print("**************************************")
                 print(" You got an Exception: {}! Moving to next stage.".format(e))
                 print("**************************************")
+                # import pdb; pdb.set_trace()  # breakpoint 77556923 //
                 continue  # nothing valueble to return, jump to next stage
             except CapacityOverloaded as e:
                 print("**************************************")
                 print(" You got an Exception: {}! Moving to next stage.".format(e))
                 print("**************************************")
+                import pdb; pdb.set_trace()  # breakpoint c0765fe6 //
                 continue  # nothing valueble to return, jump to next stage
             except (GeneratorReferenceOverloaded, GeneratorReferenceUnderloaded) as e:
                 print("**************************************")
                 print(" You got an Exception: {}! Moving to next stage.".format(e))
                 print("**************************************")
+                import pdb; pdb.set_trace()  # breakpoint 4bb72762 //
                 continue  # nothing valueble to return, jump to next stage
             # except Exception as e:
             #     print("Exception was:", e)
             #     continue
+        ############################################
+        ############################################
+        ############################################
+        ############################################
         print("Only ONE for stage now!")
         exit()
+        ############################################
+        ############################################
+        ############################################
+        ############################################
 
         """
               ###           #                    ###                                       #       #
@@ -399,14 +418,9 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
             # for subgrid in SubGrids:
             #     pass
 
-        # (Multiplica dos pandas Series) Indices
-        # son creados secuencialmente, por lo que no necesita ser DataFrame
-        # Falta incorporar costo de hidraulica DF_CVarReservoir y red externa
-        pdSeries_CostDispatch = Dict_ExtraData['CVarGenNoRef'].squeeze() * -Grid['gen']['p_kw']  # en [$US]
-
         #
-        # Calcula costo País
-        TotalPowerCost = pdSeries_CostDispatch.sum()
+        # Calcula costo País dada una red y sus costos degeneración
+        TotalPowerCost = calcula_costo_pais(Grid, Dict_ExtraData)
 
         #
         # Calcula pérdidas por flujo de líneas
@@ -431,6 +445,13 @@ def calc(CaseNum, Hidrology, Grillas, StageIndexesList, DF_ParamHidEmb_hid,
     print("----------------------------")
     print("Este fue CaseNum:", CaseNum)
     print("----------------------------")
+    #############################
+    #############################
+    #############################
+    exit()
+    #############################
+    #############################
+    #############################
     if RelevantData:  # if it's not empty
         write_values_and_finish(RelevantData, CaseNum, CaseID, outputDir=abs_OutFilePath)
     return (CaseID, SuccededStages)
@@ -538,18 +559,26 @@ def Adjust_transfo_power_limit_2_max_allowed(Grid, Dict_ExtraData):
 
 
 def check_limits_GenRef(Grid):
-    """ Allows to catch every unwishable outcome"""
+    """ Allows to catch every un-wishable outcome"""
     # Verifica Potencia para el GenSlack sea menor que su máximo (Negativo generación)
     PotSobrante = Grid['ext_grid'].at[0, 'max_p_kw'] - Grid['res_ext_grid'].at[0, 'p_kw']
     # Acota rangos factibles de potencia de generación de GenSlack
     if PotSobrante > 0:  # PGenSlack es más Negativo que Pmax
-        msg = "Reference generator is overloaded in stage {}/{} from case {}!."
+        msg = "Reference generator is overloaded (at {:,.0f} [kW] / {:,.0f} [kW])".format(
+            -Grid['res_ext_grid'].at[0, 'p_kw'],
+            -Grid['ext_grid'].at[0, 'max_p_kw'],
+        ).replace(',', ' ')
+        msg += " in stage {}/{} from case {}!."
         raise GeneratorReferenceOverloaded(msg)
 
     # Verifica Potencia para el GenSlack sea mayor que su mínimo (Negativo generación)
     PotFaltante = Grid['res_ext_grid'].at[0, 'p_kw'] - Grid['ext_grid'].at[0, 'min_p_kw']
     if PotFaltante > 0:  # PGenSlack es más Positivo que Pmin
-        msg = "Reference generator is underloaded in stage {}/{} from case {}!."
+        msg = "Reference generator is underloaded (at {:,.0f} [kW] / {:,.0f} [kW])".format(
+            -Grid['res_ext_grid'].at[0, 'p_kw'],
+            -Grid['ext_grid'].at[0, 'min_p_kw'],
+        ).replace(',', ' ')
+        msg += " in stage {}/{} from case {}!."
         raise GeneratorReferenceUnderloaded(msg)
 
     if np__isnan(PotFaltante) | np__isnan(PotSobrante):
@@ -613,7 +642,7 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, St
         try:
             GCongDict = next(ListaCongIntra)
         except StopIteration:
-            print("No more Intra congestions are allowed.")
+            # print("No more Intra congestions are allowed.")
             break
 
         for TypeElmnt, ListIndTable in GCongDict.items():
@@ -666,13 +695,13 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, St
             axis=1)
         print("overloads_df:\n", overloads_df)
 
+        print("******")
         print("TypeElmnt:", TypeElmnt)
         print("IndTable:", IndTable)
-        print("******")
         print("IntraCounter:", IntraCounter)
         print("******")
         loading_percent = Grid['res_' + TypeElmnt].at[IndTable, 'loading_percent']
-        msg = ','.join( ['', str(StageNum), str(CaseNum), TypeElmnt, str(IndTable), str(loading_percent)])
+        msg = ','.join( ['', str(StageNum), str(CaseNum), TypeElmnt, str(IndTable), str(IntraCounter), str(loading_percent)])
         logger_IntraCong.info(msg)
 
         if IntraCounter >= MaxItCongIntra:
@@ -686,16 +715,20 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, St
         try:
             msg = "Congestion redispatch started..."
             logger.debug(msg)
-            redispatch__redispatch(Grid, Dict_ExtraData, TypeElmnt, IndTable, max_load_percent=100, decs=30)
+            redispatch__redispatch(Grid, Dict_ExtraData, TypeElmnt, IndTable, max_load_percent=99, decs=1000)
+            # redispatch__redispatch(Grid, Dict_ExtraData, TypeElmnt, IndTable, max_load_percent=100, decs=30)
         except FalseCongestion:
-            # Redispatch has no meaning. Congestion wan't real. Jump to next one
+            # Redispatch has no meaning. Congestion wasn't real. Jump to next one
+            import pdb; pdb.set_trace()  # breakpoint ef1e4b85 //
             continue
         except CapacityOverloaded as e:
             # Generators limits can't handle congestion. No much meaning to keep going.
+            import pdb; pdb.set_trace()  # breakpoint 62829aff //
             raise e
         except (LoadflowNotConverged, ppException):
             # If power flow did not converged, then skip to next stage
             # (This should now happend unless base Grid is someway wrong).
+            import pdb; pdb.set_trace()  # breakpoint f645a4a4 //
             continue
 
         # Checks for results of redispatch problems and values
@@ -718,24 +751,12 @@ def do_intra_congestion(Grid, Dict_ExtraData, ListaCongIntra, MaxItCongIntra, St
             raise GeneratorReferenceUnderloaded(msg)
         msg = "Re-checking congestion existance..."
         logger.debug(msg)
-        # checks for congestión again
-        ListaCongInter, ListaCongIntra = aux_funcs__TipoCong(Grid, max_load=100)
+        # checks for congestión again and updates
+        ListaCongInter, ListaCongIntra = aux_funcs__TipoCong(Grid, max_load=100)  # this tells one exist condition
         print("ListaCongIntra:", ListaCongIntra)
         print("ListaCongInter:", ListaCongInter)
-        overloads_df = Grid['res_' + TypeElmnt][ Grid['res_' + TypeElmnt]['loading_percent'] > 100 ]
-        overloads_df = pd__concat(
-            [
-                overloads_df.loc[:, ['p_from_kw', 'i_from_ka', 'loading_percent']],
-                Grid.line.loc[overloads_df.index, [
-                    'name', 'from_bus', 'to_bus', 'length_km',
-                    'r_ohm_per_km', 'x_ohm_per_km', 'c_nf_per_km',
-                    'max_i_ka' ]]
-            ],
-            axis=1)
-        print("overloads_df:\n", overloads_df)
         print("--- fin iteración while ---")
         ListaCongIntra = iter(ListaCongIntra)
-        import pdb; pdb.set_trace()  # breakpoint 4596f6e4 //
     return None
 
 
@@ -815,6 +836,7 @@ def estimates_power_losses(net, method='linear'):
     """
     Data = np__real( net._ppc['branch'][:, [PF, BR_R, BR_X]] )
     Z_branches = Data[:, 1] + 1j * Data[:, 2]
+    n_R = len(Z_branches)
     F_ik = Data[:, [0]]  # power [MW] inyected from 'from_bus' to branch
     if method == 'linear':
         """ Low error is achived when R < 0.25 X per branch.
@@ -838,8 +860,9 @@ def estimates_power_losses(net, method='linear'):
         Bbus, Bpr, IncidenceMat = redispatch__make_Bbus_Bpr_A(net)  # from linear power flow (no Resistance in B)
         G_vector = np__real(1 / Z_branches).T  # inverse of each value. Requieres resitance not to be Susceptance.
         DeltaBarra = net._ppc['bus'][:, [VA]]  # these should real values
-        # PLoss = 2 * [G_vector]{1xR} * (1 - cos( [IncidenceMat]{RxN}* [DeltaBarra]{Nx1}))
-        return 2 * G_vector.T * np__cos( IncidenceMat * DeltaBarra ).T
+        # PLoss = 2 * [G_vector]{1xR} * I{RxR} * (1{Rx1} - cos( [IncidenceMat]{RxN}* [DeltaBarra]{Nx1}))
+        # return 2 * G_vector.T * np__cos( IncidenceMat * DeltaBarra ).T
+        return 2 * G_vector.T * np__eye(n_R) * (np__ones((n_R, 1)) - np__cos(IncidenceMat * DeltaBarra) )
     else:
         msg = "method '{}' is no available yet.".format(method)
         logger.error(msg)
@@ -860,6 +883,16 @@ def update_resevoirs_and_series_unit_cvar(Dict_ExtraData, Grid, DF_CostoCentrale
     unit_indices = series_and_reservoir_units.index
     # updates values
     Dict_ExtraData['CVarGenNoRef'].loc[unit_indices, 'CVar'] = cvars_per_unit.values
+
+
+def calcula_costo_pais(net, extra_data):
+    """
+        Basically multiplica costo var con Pgeneración
+    """
+    pdSeries_CostDispatch = Dict_ExtraData['CVarGenNoRef'].squeeze() * -Grid['gen']['p_kw']  # en [$US]
+    costo_total = (-1) * Grid.res_ext_grid['p_kw'].squeeze() * Dict_ExtraData['CVarGenRef'].squeeze()
+    costo_total += pdSeries_CostDispatch.sum()
+    return costo_total
 
 
 def write_values_and_finish(RelevantData, CaseNum, CaseID, outputDir='.'):

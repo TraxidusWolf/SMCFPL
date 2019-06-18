@@ -1052,9 +1052,9 @@ def TipoCong(Grid, max_load=100):
             tipoElemento = DF_cong.iloc[0]['TypeElmnt']
             indiceTabla = DF_cong.iloc[0]['IndTable']
             if tipoElemento == 'line':
-                ListaCongInter.append( {'line': [indiceTabla], 'trafo': []} )
+                ListaCongInter.append( collections__OrderedDict([('line', [indiceTabla]), ('trafo', [])]) )
             else:
-                ListaCongInter.append( {'line': [], 'trafo': [indiceTabla]} )
+                ListaCongInter.append( collections__OrderedDict([('line', []), ('trafo', [indiceTabla])]) )
             continue
         elif DF_cong.empty:
             # extraño caso que estuviera vacío (quizá no tanto)
@@ -1121,9 +1121,9 @@ def TipoCong(Grid, max_load=100):
             tipoElemento = DF_cong.iloc[0]['TypeElmnt']
             indiceTabla = DF_cong.iloc[0]['IndTable']
             if tipoElemento == 'line':
-                ListaCongIntra.append( {'line': [indiceTabla], 'trafo': []} )
+                ListaCongIntra.append( collections__OrderedDict([('line', [indiceTabla]), ('trafo', [])]) )
             else:
-                ListaCongIntra.append( {'line': [], 'trafo': [indiceTabla]} )
+                ListaCongIntra.append( collections__OrderedDict([('line', []), ('trafo', [indiceTabla])]) )
             continue
         elif DF_cong.empty:
             # extraño caso que estuviera vacío (quizá no tanto)

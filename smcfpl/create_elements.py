@@ -294,7 +294,7 @@ class Simulation(object):
         STime = dt.now()
 
         # initialize first row of logger_IntraCong if headers were declared
-        headers = 'LogInfo,StageNum,CaseNum,TypeElmnt,IndTable,loading_percent'
+        headers = 'LogInfo,StageNum,CaseNum,TypeElmnt,IndTable,IntraCounter,loading_percent'
         logger_IntraCong.info(headers)
 
         # Comienza con la ejecución de lo cálculos

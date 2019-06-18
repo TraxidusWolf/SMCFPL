@@ -19,7 +19,6 @@ from numpy import argwhere as np__argwhere, seterr as np__seterr
 from numpy import copy as np__copy, where as np__where
 from numpy import set_printoptions as np__set_printoptions
 from pandas import concat as pd__concat
-from collections import OrderedDict
 import logging
 
 
@@ -69,10 +68,10 @@ def redispatch(Grid, Dict_ExtraData, TypeElmnt, BranchIndTable, max_load_percent
         Return None (inplace power Grid generation modification)
 
         Syntax:
-            redispatch(Grid, TypeElmnt, BranchIndTable, max_load_percent=100)
+            redispatch(Grid, Dict_ExtraData, TypeElmnt, BranchIndTable, max_load_percent=100)
 
         Example:
-            redispatch(Grid, 'line', 0, max_load_percent = 2.8)
+            redispatch(Grid, Dict_ExtraData, 'line', 0, max_load_percent = 2.8)
     """
     # verifies argument types
     if not isinstance(BranchIndTable, (int, uint8, uint32, uint64, int8, int32, int64)):
@@ -101,75 +100,85 @@ def redispatch(Grid, Dict_ExtraData, TypeElmnt, BranchIndTable, max_load_percent
     # Find the NON-ERNC unit, so they are the ONLY TO CHANGE POWER DISPATCHED
     ERNC_type_list_names = ['Solar', 'EólicaZ1', 'EólicaZ2', 'EólicaZ3', 'EólicaZ4', 'Pasada']  # hard coded, MUST CHANGE!
 
-    non_fixed_units_pd2ppc, fixed_units_pd2ppc = dict(), dict()
+    non_fixed_units_pd2ppc = dict()
     non_fixed_gen_net_idx = Grid.gen[ ~Grid.gen['type'].isin(ERNC_type_list_names) ].index
     non_fixed_units_pd2ppc['gen'] = Grid._pd2ppc_lookups['gen'][non_fixed_gen_net_idx]
     aux_filter_DF = Dict_ExtraData['TecGenSlack']['GenTec'].isin(ERNC_type_list_names).values
     non_fixed_ext_grid_net_idx = Dict_ExtraData['TecGenSlack'][ ~aux_filter_DF ]['pp_ext_grid_idx'].values
     non_fixed_units_pd2ppc['ext_grid'] = Grid._pd2ppc_lookups['ext_grid'][non_fixed_ext_grid_net_idx]
 
-    fixed_gen_net_idx = Grid.gen[ Grid.gen['type'].isin(ERNC_type_list_names) ].index
-    fixed_units_pd2ppc['gen'] = Grid._pd2ppc_lookups['gen'][fixed_gen_net_idx]
-    aux_filter_DF = Dict_ExtraData['TecGenSlack']['GenTec'].isin(ERNC_type_list_names).values
-    fixed_ext_grid_net_idx = Dict_ExtraData['TecGenSlack'][ aux_filter_DF ]['pp_ext_grid_idx'].values
-    fixed_units_pd2ppc['ext_grid'] = Grid._pd2ppc_lookups['gen'][fixed_ext_grid_net_idx]
-
     # Get the row of the branch of interest from matrices (according to IndxBrnchElmnts and input argument)
     TheRowBrnchIndMat = IndxBrnchElmnts[TypeElmnt][BranchIndTable]  # asume elementos de tabla ordenados secuencialmente según tablas Grid
     # Uses FUPTG to determine the most and least participation generators on line flow. Uses ordered
     RowValues = FUPTG[TheRowBrnchIndMat, :]
     # calcula la potencia sobrante
-    OverloadP_kW, loading_percent = power_over_congestion( Grid, TypeElmnt,
-                                                           BranchIndTable,
-                                                           max_load_percent)
-    if (OverloadP_kW <= 0) :  # & (loading_percent < max_load_percent) ?
+    power2distribute_kW, loading_percent = power_over_congestion( Grid, TypeElmnt,
+                                                                  BranchIndTable,
+                                                                  max_load_percent)
+    if (power2distribute_kW <= 0) :  # & (loading_percent < max_load_percent) ?
         # here catch negative o zero value "DiffPower"
         msg = "Branch '{}' wasn't really congested ({:.4f} %)".format(TypeElmnt, loading_percent)
         logger.error(msg)
         raise FalseCongestion(msg)
 
-    modify_dispatch_by_FUPTG( Grid, RowValues, OverloadP_kW, non_fixed_units_pd2ppc)
+    modify_dispatch_by_FUPTG( Grid, RowValues, power2distribute_kW, non_fixed_units_pd2ppc)
     return None
 
 
 def modify_dispatch_by_FUPTG(net, branch_FUPTG, power2distribute_kW, non_fixed_units_pd2ppc, method=1):
     """
         Algorithm to modify distribute some excess power by dispatching more influence units.
+        Modifies PandaPower network 'net' as it is copied by reference.
+        Return None.
     """
     print("branch_FUPTG:", branch_FUPTG)
     print("power2distribute_kW:", power2distribute_kW)
     # reconstruct order from FUPTG columns (first all ext_grids, then gens)
     #
-    # work with dataframes (copies of pp tables). None means not applied.
-    generators = net.gen.drop(['scaling', 'in_service', 'min_q_kvar', 'sn_kva', 'max_q_kvar', 'vm_pu', 'type', 'bus'], axis='columns')
-    generators = generators.assign(**{
-        'pd2ppc': net._pd2ppc_lookups['gen'],
-        'FUPTG_cong': branch_FUPTG[net._pd2ppc_lookups['gen']],
-        'fixed2increase': True,
-        'factorsN': None,
-        'dP_kW': None,  # dp: delta power ...
-        'dP_weigh': None,  # dp: delta power ...
-        'final_weigh': None,  # weigh factor as sum of the one from deltaP and FUPTG
-    })
-    ext_grids = net.ext_grid.drop(['vm_pu', 'va_degree', 'in_service', 'bus'], axis='columns')
-    ext_grids = ext_grids.assign(**{
-        'pd2ppc': net._pd2ppc_lookups['ext_grid'],
-        'FUPTG_cong': branch_FUPTG[net._pd2ppc_lookups['ext_grid']],
-        'fixed2increase': True,
-        'factorsN': None,
-        'dP_kW': None,  # dp: delta power ...
-        'dP_weigh': None,  # dp: delta power ...
-        'final_weigh': None,  # weigh factor as sum of the one from deltaP and FUPTG
-    })
     if method == 1:
         ###############################################################################################################
         ###############################################################################################################
         ###############################################################################################################
-        #  Method 1: Technically more efficient (FUPTG sensibility)
+        #  Method 1: Technically more efficient - iterative (FUPTG positive and negative variation)
         #  Unit pondered factor by positive and negative FUPTG to increase and decrease respectively power2distribute_kW
         #  Some units are considered 'fixed2increase' generation, specially those that can only reduce (if implemented
         #  technology) their power for redispatch. THAT IS, ALL POSITIVE FACTORS CAM BE USE TO REDUCE power.
-
+        # Steps:
+        #   1.- Split FUPTG for branch into positive and negative (zero value are not considered).
+        #   2.- Filter selection leaving available Non NCRE units to increase (conventional generation).
+        #       and the ability of every unit with enough technology to reduce it's generation by specific amount.
+        #   3.- Every unit able to increase is associated with 'neg' suffix. Every unit able to decrease is asociated with 'pos' suffix.
+        #   4.- Ponder the available FUPTG as weighs like a group ('pos' and 'neg'). Normalization.
+        #   5.- Find the power available to change (is it possible to redispatch).
+        #   6.- Create other weighs according to the delta power for each changeable unit.
+        #   7.- Average a pondered sum of the two weighs (factorN from FUPTGs and factors from delta power available)
+        #   8.- Multiply power2distribute_kW by the factors, so total sum is twice as big, given 'pos' and 'neg' factors.
+        #   9.- Generation corresponding to slack machine is split uniformly across generator that have opposite factor sign.
+        #       That is if current ext_grid belong to the group of 'neg', it's power is sent uniformly to all 'pos'
+        #       generator, and viceversa.
+        #   ¿LIMITES DE UNIDADES EN FORMA INDIVIDUAL? ¿COMO SE ASEGURA CORRECTO FUNCIONAMIENTO?
+        #
+        # work with dataframes (copies of pp tables). None means not applied.
+        generators = net.gen.drop(['scaling', 'in_service', 'min_q_kvar', 'sn_kva', 'max_q_kvar', 'vm_pu', 'type', 'bus'], axis='columns')
+        generators = generators.assign(**{
+            'pd2ppc': net._pd2ppc_lookups['gen'],
+            'FUPTG_cong': branch_FUPTG[net._pd2ppc_lookups['gen']],
+            'fixed2increase': True,
+            'factorsN': None,
+            'dP_kW': None,  # dp: delta power ...
+            'dP_weigh': None,  # dp: delta power ...
+            'final_weigh': None,  # weigh factor as sum of the one from deltaP and FUPTG
+        })
+        ext_grids = net.ext_grid.drop(['vm_pu', 'va_degree', 'in_service', 'bus'], axis='columns')
+        ext_grids = ext_grids.assign(**{
+            'pd2ppc': net._pd2ppc_lookups['ext_grid'],
+            'FUPTG_cong': branch_FUPTG[net._pd2ppc_lookups['ext_grid']],
+            'fixed2increase': True,
+            'factorsN': None,
+            'dP_kW': None,  # dp: delta power ...
+            'dP_weigh': None,  # dp: delta power ...
+            'final_weigh': None,  # weigh factor as sum of the one from deltaP and FUPTG
+        })
         # update 'fixed' values for generators and ext_grids
         non_fixed_net_gen_idx = generators['pd2ppc'].isin( non_fixed_units_pd2ppc['gen'] )
         generators.loc[ non_fixed_net_gen_idx, 'fixed2increase' ] = False
@@ -216,10 +225,6 @@ def modify_dispatch_by_FUPTG(net, branch_FUPTG, power2distribute_kW, non_fixed_u
             logger.warn(msg)
             raise CapacityOverloaded(msg)
 
-        # from pandas import options as pd__options
-        # from matplotlib.ticker import EngFormatter
-        # pd__options.display.float_format = EngFormatter()
-
         # weigh factors given deltaP power
         generators.loc[ pos_gen_vals_idx, 'dP_weigh'] = generators['dP_kW'] / delta_Ppos_avail
         generators.loc[ neg_gen_vals_idx, 'dP_weigh'] = generators['dP_kW'] / delta_Pneg_avail
@@ -250,15 +255,16 @@ def modify_dispatch_by_FUPTG(net, branch_FUPTG, power2distribute_kW, non_fixed_u
 
         # Power corresponding to slack bus has to be transfer to other generators, per slack unit (unique)
         # If slack belongs to positive, then all other units have to equally increase generation (those negative)
-        for unit in ext_grids[pos_ext_grid_vals_idx].iterrows():
+        for unit_name, unit_data in ext_grids[pos_ext_grid_vals_idx].iterrows():
             # get value of total power to share
-            P_ext_grid2others = unit['final_weigh'] * power2distribute_kW
+            # import pdb; pdb.set_trace()  # breakpoint 75caa2ff //
+            P_ext_grid2others = unit_data['final_weigh'] * power2distribute_kW
             # here absolut values
             newP_kW_gen += P_ext_grid2others / newP_kW_gen[neg_gen_vals_idx].shape[0]
         # else, (belongs to negative) all other units have to equally decrease generation (those positive)
-        for unit in ext_grids[neg_ext_grid_vals_idx].iterrows():
+        for unit_name, unit_data in ext_grids[neg_ext_grid_vals_idx].iterrows():
             # get value of total power to share
-            P_ext_grid2others = unit['final_weigh'] * power2distribute_kW
+            P_ext_grid2others = unit_data['final_weigh'] * power2distribute_kW
             # here absolut values
             newP_kW_gen -= P_ext_grid2others / newP_kW_gen[pos_gen_vals_idx].shape[0]
 
@@ -273,12 +279,20 @@ def modify_dispatch_by_FUPTG(net, branch_FUPTG, power2distribute_kW, non_fixed_u
         ###############################################################################################################
         ###############################################################################################################
         ###############################################################################################################
-        #  Method 2: ???
-        #       ???
-        pass
+        #  Method 2: Technically more efficient - single step (FUPTG postive or negative and near zero values)
+        #  Verifica potencia disponible a unidades que menos afectan a la congestion (dado umbral de entrada), así como
+        #  aquellas que más afectan (positiva o negativamente) a la congestión.
+        #  De no existir unidades suficiente potencia (o en su defencto sin unidades), este método ya no es factible pués
+        #  se convierte en una problemática no lineal al modificar dos veces las variables.
+        #
+        # Steps:
+        #   1.-
+
         ###############################################################################################################
         ###############################################################################################################
         ###############################################################################################################
+
+        net.gen
     return None
 
 
@@ -415,7 +429,7 @@ def calc_GSDF_factor(Bbus, Bpr, IncidenceMat, RefBusMatIndx, CondMat=False, decs
     Xbus = sps__vstack((Xbus[FrstStackNRef, :], Mzeros, Xbus[ScndStackNRef, :]))
     # calculates GSDF Factor Matrix
     GSDFmat = Bpr @ IncidenceMat @ Xbus  # dot multiplication
-    GSDFmat.data = np__round(GSDFmat.data, decs)  # approximate values to avoid numerical errors
+    # GSDFmat.data = np__round(GSDFmat.data, decs)  # approximate values to avoid numerical errors
     return GSDFmat
 
 
@@ -492,7 +506,7 @@ def calc_GGDF_Factor(Grid, GSDF, RefBus, decs=10, FUTP_cf=True):
             # GGDF = GSDF + GGDF_bref
             GGDF[:, NumNodo] = GGDF_bref + GSDF[:, NumNodo]
     GGDF = GGDF.tocsr()
-    GGDF.data = np__round(GGDF.data, decs)  # approximate values to avoid numerical errors
+    # GGDF.data = np__round(GGDF.data, decs)  # approximate values to avoid numerical errors
 
     # Calculates "Factores de Utilización por Tramo de Generación"
     FUPTG = calc_FUTP_gen(GGDF, GenBus_mat, Gmat, F_ik, FUTP_cf, decs = decs)
@@ -542,7 +556,7 @@ def calc_FUTP_gen(GGDFmat, GenBus_mat, Gmat, F_ik, cf = True, decs = 10):
     PTG_mat = np__repeat(PTG, GenBus_mat.shape[1], axis = 1)  # recordar GenBus_mat (branch x Ngen)
     # Calcula los "Factores de Utilización por Tramo de generación"
     FUPT = (GGDFmat @ GenBus_mat).toarray() / PTG_mat
-    FUPT = np__round(FUPT, decs)  # approximate values to avoid numerical errors
+    # FUPT = np__round(FUPT, decs)  # approximate values to avoid numerical errors
     return FUPT
 
 
